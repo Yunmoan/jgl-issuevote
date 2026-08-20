@@ -220,7 +220,7 @@ export class AuthService {
     return this.getViewer(String(userId));
   }
 
-  async refreshFeishuDepartments(userId: string) {
+  async refreshFeishuDepartments(userId: string, actor?: Viewer) {
     const identity = await this.db.first(
       `SELECT open_id FROM auth_identities WHERE user_id = :userId AND provider = 'feishu'`,
       { userId }
@@ -228,6 +228,7 @@ export class AuthService {
     const openId = String(identity?.open_id || '').trim();
     if (!openId) throw new UnauthorizedException('当前账户缺少可用于同步部门的飞书 open_id');
     await this.syncFeishuDepartments(userId, openId);
+    if (actor) await this.audit(actor.id, 'feishu.user_department.sync', 'user', userId, { openId });
     return this.getViewer(userId);
   }
 

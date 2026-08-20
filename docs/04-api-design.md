@@ -94,6 +94,7 @@ POST   /api/issues/:number/review
 GET    /api/issues/:number
 PATCH  /api/issues/:number
 POST   /api/issues/:number/close
+POST   /api/issues/:number/end-voting
 POST   /api/issues/:number/start-voting
 POST   /api/issues/:number/outcome
 POST   /api/issues/:number/reopen
@@ -165,7 +166,7 @@ AI 模式下，创建页面第 1 步调用 `POST /api/issues/ai-review`：
 }
 ```
 
-未配置投票时间时，议题先处于 `open`（开放讨论），创建者可通过 `POST /api/issues/:number/start-voting` 开始投票；配置开始和结束时间后会自动转为 `voting` 并在结束时自动关闭。`POST /api/issues/:number/close` 接收 `{ "visibility": "retain" | "public" }`，用于关闭时保持现状或公开给所有访客。自定义规则结束后返回 `outcome=manual_required`，仅 `admin` 或 `auditor` 可通过 `POST /api/issues/:number/outcome` 提交 `{ "outcome": "passed" | "rejected" }`。
+未配置投票时间时，议题先处于 `open`（开放讨论），创建者可通过 `POST /api/issues/:number/start-voting` 开始投票。`POST /api/issues/:number/end-voting` 会结束当前轮票并转为 `vote_ended`，保留讨论但不再接受新投票；`POST /api/issues/:number/close` 才会停止讨论和投票。关闭接口接收 `{ "visibility": "retain" | "public" | "admin_only" }`，用于保持现状、公开给所有访客，或对除管理员外的所有人隐藏。自定义规则结束后返回 `outcome=manual_required`，仅 `admin` 或 `auditor` 可通过 `POST /api/issues/:number/outcome` 提交 `{ "outcome": "passed" | "rejected" }`。
 
 议题详情返回应包含当前用户能力：
 

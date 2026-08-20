@@ -58,6 +58,13 @@ export class AdminController {
     return { data: await this.feishuOrganization.syncAllDepartments(viewer) };
   }
 
+  @Post('users/:id/feishu-departments/sync')
+  async syncUserFeishuDepartments(@Param('id') id: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    this.users.requireAdmin(viewer);
+    return { data: await this.auth.refreshFeishuDepartments(id, viewer) };
+  }
+
   @Get('labels')
   async labels(@Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);

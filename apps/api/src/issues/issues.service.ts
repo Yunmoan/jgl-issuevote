@@ -8,7 +8,7 @@ import { AiReviewService } from './ai-review.service';
 export const createIssueSchema = z.object({
   title: z.string().trim().min(3).max(200),
   bodyMd: z.string().trim().min(1).max(1024 * 1024),
-  visibility: z.enum(['public', 'login', 'groups']).default('login'),
+  visibility: z.enum(['public', 'login', 'groups', 'admin_only']).default('login'),
   viewGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),
   voteGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),
   labelIds: z.array(z.coerce.number().int().positive()).max(20).default([]).transform(uniqueValues),
@@ -72,7 +72,7 @@ export class IssuesService implements OnModuleInit {
 
     if (query.status) {
       if (query.status === 'open') {
-        conditions.push(`i.status IN ('open', 'voting')`);
+        conditions.push(`i.status IN ('open', 'voting', 'vote_ended')`);
       } else {
         conditions.push('i.status = :status');
         params.status = query.status;
@@ -96,12 +96,12 @@ export class IssuesService implements OnModuleInit {
     } else if (!viewer.groups.includes('admin')) {
       conditions.push(`(
         i.visibility IN ('public', 'login')
-        OR EXISTS (
+        OR (i.visibility = 'groups' AND EXISTS (
           SELECT 1 FROM issue_view_groups ivg
           JOIN permission_groups pg ON pg.id = ivg.group_id
           JOIN user_group_memberships ugm ON ugm.group_id = pg.id
           WHERE ivg.issue_id = i.id AND ugm.user_id = :viewerId
-        )
+        ))
       )`);
       params.viewerId = viewer.id;
     }
@@ -144,6 +144,7 @@ export class IssuesService implements OnModuleInit {
 
   async create(input: z.infer<typeof createIssueSchema>, viewer: Viewer, aiReviewToken?: string) {
     this.requireIssueSubmitter(viewer);
+    if (input.visibility === 'admin_only') throw new BadRequestException('仅管理员可见只能在关闭议题时设置');
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const reviewMode = await this.aiReview.mode();
     if (reviewMode === 'ai') await this.aiReview.verifyReviewToken(aiReviewToken, input, viewer);
@@ -554,11 +555,27 @@ export class IssuesService implements OnModuleInit {
     return this.getByNumber(number, viewer);
   }
 
-  async close(number: string, closeVisibility: 'retain' | 'public', viewer: Viewer) {
+  async close(number: string, closeVisibility: 'retain' | 'public' | 'admin_only', viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     this.requireIssueManager(detail, viewer);
-    if (detail.issue.status !== 'open' && detail.issue.status !== 'voting') throw new ForbiddenException('只有开放中的议题可以关闭');
+    if (!['open', 'voting', 'vote_ended'].includes(detail.issue.status)) throw new ForbiddenException('只有开放中的议题可以关闭');
     await this.closeIssue(detail.issue, viewer, 'manual', closeVisibility);
+    if (closeVisibility === 'admin_only' && !viewer.groups.includes('admin')) {
+      return { hidden: true, number: detail.issue.number, status: 'closed', visibility: 'admin_only' as const };
+    }
+    return this.getByNumber(number, viewer);
+  }
+
+  async endVoting(number: string, viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    this.requireIssueManager(detail, viewer);
+    if (detail.issue.status !== 'voting') throw new ForbiddenException('只有投票中的议题可以结束投票');
+    const now = nowSql();
+    await this.db.exec(
+      `UPDATE issues SET status = 'vote_ended', vote_ends_at = :now, updated_at = :now WHERE id = :issueId`,
+      { now, issueId: detail.issue.id }
+    );
+    await this.audit(viewer.id, 'issue.vote_end', 'issue', detail.issue.id, { number, mode: 'manual' });
     return this.getByNumber(number, viewer);
   }
 
@@ -611,6 +628,9 @@ export class IssuesService implements OnModuleInit {
   async update(number: string, input: z.infer<typeof updateIssueSchema>, viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
+    if (input.visibility === 'admin_only' && detail.issue.visibility !== 'admin_only') {
+      throw new BadRequestException('仅管理员可见只能在关闭议题时设置');
+    }
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
     const reviewMode = await this.aiReview.mode();
@@ -668,17 +688,21 @@ export class IssuesService implements OnModuleInit {
     return new Date(input.voteStartsAt).getTime() <= now && new Date(input.voteEndsAt).getTime() > now ? 'voting' : 'open';
   }
 
-  private async closeIssue(issue: { id: string; number?: number; votingEnabled: boolean; passRule: string }, viewer: Viewer | null, mode: 'manual' | 'scheduled', closeVisibility: 'retain' | 'public') {
+  private async closeIssue(issue: { id: string; number?: number; votingEnabled: boolean; passRule: string }, viewer: Viewer | null, mode: 'manual' | 'scheduled', closeVisibility: 'retain' | 'public' | 'admin_only') {
     const now = nowSql();
     const outcome = await this.outcomeForIssue(issue.id, issue.votingEnabled, issue.passRule);
     await this.db.exec(
-      `UPDATE issues SET status = 'closed', visibility = CASE WHEN :closeVisibility = 'public' THEN 'public' ELSE visibility END,
+      `UPDATE issues SET status = 'closed', visibility = CASE
+         WHEN :closeVisibility = 'public' THEN 'public'
+         WHEN :closeVisibility = 'admin_only' THEN 'admin_only'
+         ELSE visibility
+       END,
        closed_by = :viewerId, closed_at = :now, outcome = :outcome, outcome_confirmed_by = NULL,
        outcome_confirmed_at = NULL, updated_at = :now WHERE id = :issueId`,
       { closeVisibility, viewerId: viewer?.id || null, now, outcome, issueId: issue.id }
     );
     if (closeVisibility === 'public') await this.replaceIssueGroups('issue_view_groups', issue.id, []);
-    await this.audit(viewer?.id || null, mode === 'manual' ? 'issue.vote_end' : 'issue.vote_end_auto', 'issue', issue.id, {
+    await this.audit(viewer?.id || null, mode === 'manual' ? 'issue.close' : 'issue.vote_end_auto', 'issue', issue.id, {
       number: issue.number,
       outcome,
       visibility: closeVisibility
@@ -716,7 +740,7 @@ export class IssuesService implements OnModuleInit {
       const dueIssues = await this.db.rows(
         `SELECT id, number, voting_enabled, pass_rule
          FROM issues
-         WHERE status IN ('open', 'voting')
+         WHERE status = 'voting'
            AND voting_enabled = TRUE
            AND vote_starts_at IS NOT NULL
            AND vote_ends_at IS NOT NULL
@@ -883,6 +907,7 @@ export class IssuesService implements OnModuleInit {
       return Boolean(viewer && (String(issue.created_by) === viewer.id || String(issue.reviewed_by) === viewer.id));
     }
     if (issue.visibility === 'public') return true;
+    if (issue.visibility === 'admin_only') return false;
     if (!viewer) return false;
     if (issue.visibility === 'login') return true;
     const row = await this.db.first(
@@ -899,7 +924,7 @@ export class IssuesService implements OnModuleInit {
 
   private canCommentOnIssue(issue: any, viewer: Viewer | null) {
     const endsAt = issue.comment_ends_at || issue.commentEndsAt;
-    return Boolean(viewer) && issue.status === 'open' && (!endsAt || new Date(endsAt).getTime() >= Date.now());
+    return Boolean(viewer) && ['open', 'vote_ended'].includes(issue.status) && (!endsAt || new Date(endsAt).getTime() >= Date.now());
   }
 
   private async canVote(issue: any, viewer: Viewer | null) {
@@ -1028,7 +1053,13 @@ export class IssuesService implements OnModuleInit {
   }
 
   private requireIssueSubmitter(viewer: Viewer) {
-    if (!this.canReviewIssueSubmissions(viewer)) throw new ForbiddenException('需要普通成员或更高权限才能提交议题');
+    if (!this.canReviewIssueSubmissions(viewer) && !this.hasFeishuDepartmentGroup(viewer)) {
+      throw new ForbiddenException('需要普通成员或飞书部门权限才能提交议题');
+    }
+  }
+
+  private hasFeishuDepartmentGroup(viewer: Viewer) {
+    return viewer.groups.some((group) => group.startsWith('feishu_dept_'));
   }
 
   private requireIssueReviewer(viewer: Viewer) {

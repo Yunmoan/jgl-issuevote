@@ -185,11 +185,11 @@ function statusMeta(value: string) {
 }
 
 function visibilityText(value: string) {
-  return { public: '公开', login: '登录可见', groups: '群组可见' }[value] || value;
+  return { public: '公开', login: '登录可见', groups: '群组可见', admin_only: '仅管理员可见' }[value] || value;
 }
 
 function statusText(value: string) {
-  return { open: '开放讨论', voting: '投票中', closed: '已关闭', archived: '已归档' }[value] || value;
+  return { open: '开放讨论', voting: '投票中', vote_ended: '投票已结束', closed: '已关闭', archived: '已归档' }[value] || value;
 }
 
 function statusTagType(value: string): 'success' | 'warning' | 'default' {

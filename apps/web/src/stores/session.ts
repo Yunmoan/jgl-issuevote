@@ -23,7 +23,7 @@ export const useSessionStore = defineStore('session', {
   }),
   getters: {
     isAdmin: (state) => Boolean(state.viewer?.groups.includes('admin')),
-    canCreateIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group))),
+    canCreateIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group) || group.startsWith('feishu_dept_'))),
     canPublishIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['admin', 'issue_creator'].includes(group))),
     canReviewIssueSubmissions: (state) => Boolean(state.viewer?.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group)))
   },
@@ -53,6 +53,15 @@ export const useSessionStore = defineStore('session', {
       if (!this.providers?.natayarkid.enabled) return;
       window.location.href = authStartUrl('natayarkid', 'link');
     },
+    async syncFeishuDepartments() {
+      try {
+        this.viewer = await apiPost<Viewer>('/auth/feishu/departments/sync');
+        return this.viewer;
+      } catch (error) {
+        this.viewer = await apiGet<Viewer | null>('/me').catch(() => this.viewer);
+        throw error;
+      }
+    },
     async autoLoginWithFeishu() {
       const feishu = this.providers?.feishu;
       if (!feishu?.enabled || !feishu.autoLogin || !feishu.appId || feishuAutoLoginAttempted) return;
@@ -60,7 +69,7 @@ export const useSessionStore = defineStore('session', {
       const refreshingDepartments = Boolean(this.viewer?.boundProviders.includes('feishu'));
       try {
         if (refreshingDepartments) {
-          this.viewer = await apiPost<Viewer>('/auth/feishu/departments/sync');
+          await this.syncFeishuDepartments();
           return;
         }
         await loadFeishuSdk(feishu.sdkUrl);
@@ -68,9 +77,6 @@ export const useSessionStore = defineStore('session', {
         const code = await requestFeishuAuthCode(feishu.appId);
         if (code) this.viewer = await apiPost<Viewer>(this.viewer ? '/auth/feishu/bind-code' : '/auth/feishu/code', { code });
       } catch (error) {
-        if (refreshingDepartments) {
-          this.viewer = await apiGet<Viewer | null>('/me').catch(() => this.viewer);
-        }
         // The SDK is intentionally attempted after it has been loaded: some Feishu
         // WebViews expose their bridge only then and do not identify in the UA.
         console.warn(refreshingDepartments ? '飞书部门权限组刷新失败' : '飞书自动登录未完成', error);

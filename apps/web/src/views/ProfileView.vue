@@ -10,6 +10,8 @@
           <n-descriptions-item label="权限组" :span="2"><n-space><n-tag v-for="group in session.viewer.groups" :key="group" type="info" size="small">{{ displayGroup(group) }}</n-tag></n-space></n-descriptions-item>
         </n-descriptions>
         <n-divider />
+        <n-space v-if="session.viewer.boundProviders.includes('feishu')" align="center" justify="space-between" :wrap="true"><div><n-text strong>飞书部门权限</n-text><br /><n-text depth="3">同步后将按飞书通讯录更新所属部门权限组。</n-text></div><n-button secondary :loading="syncingFeishuDepartments" @click="syncFeishuDepartments"><template #icon><n-icon><RefreshOutline /></n-icon></template>同步飞书部门</n-button></n-space>
+        <n-divider v-if="session.viewer.boundProviders.includes('feishu')" />
         <n-space align="center" justify="space-between" :wrap="true"><div><n-text strong>账户绑定</n-text><br /><n-text depth="3">绑定额外身份后，可使用任一已绑定账户登录。</n-text></div><n-tag v-if="session.viewer.boundProviders.includes('natayarkid')" type="success" :bordered="false">NatayarkID 已绑定</n-tag><n-button v-else-if="session.providers?.natayarkid.enabled" secondary @click="session.linkNatayarkId"><template #icon><n-icon><LinkOutline /></n-icon></template>绑定 NatayarkID</n-button><n-text v-else depth="3">NatayarkID 登录未启用</n-text></n-space>
       </n-space>
     </n-card>
@@ -18,11 +20,15 @@
 </template>
 
 <script setup lang="ts">
-import { LinkOutline, LogOutOutline } from '@vicons/ionicons5';
-import { NAvatar, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NH2, NIcon, NSpace, NTag, NText } from 'naive-ui';
+import { ref } from 'vue';
+import { LinkOutline, LogOutOutline, RefreshOutline } from '@vicons/ionicons5';
+import { NAvatar, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NH2, NIcon, NSpace, NTag, NText, useMessage } from 'naive-ui';
 import { useSessionStore } from '../stores/session';
 import { displayGroup, displayProvider } from '../presentation';
 const session = useSessionStore();
+const message = useMessage();
+const syncingFeishuDepartments = ref(false);
+async function syncFeishuDepartments() { syncingFeishuDepartments.value = true; try { await session.syncFeishuDepartments(); message.success('飞书部门权限组已同步'); } catch (error) { message.error(error instanceof Error ? error.message : '飞书部门同步失败'); } finally { syncingFeishuDepartments.value = false; } }
 </script>
 
 <style scoped>.login-empty { padding: 36px 0; }</style>

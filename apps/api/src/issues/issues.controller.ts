@@ -104,8 +104,14 @@ export class IssuesController {
   @Post('issues/:number/close')
   async close(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
-    const parsed = z.object({ visibility: z.enum(['retain', 'public']).default('retain') }).parse(body);
+    const parsed = z.object({ visibility: z.enum(['retain', 'public', 'admin_only']).default('retain') }).parse(body);
     return { data: await this.issues.close(number, parsed.visibility, viewer) };
+  }
+
+  @Post('issues/:number/end-voting')
+  async endVoting(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.endVoting(number, viewer) };
   }
 
   @Post('issues/:number/start-voting')
