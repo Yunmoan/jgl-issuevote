@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Inject, Param, Post, Put, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
 import type { VoteChoice } from '../types';
 import { createIssueSchema, IssuesService, updateIssueSchema } from './issues.service';
 import { UsersService } from '../users/users.service';
+import { uploadDirectory } from '../uploads';
 
 @Controller()
 export class IssuesController {
@@ -28,6 +33,19 @@ export class IssuesController {
   async permissionGroups(@Req() req: Request) {
     await this.auth.requireViewer(req);
     return { data: await this.users.groups() };
+  }
+
+  @Post('uploads/images')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadImage(@UploadedFile() file: Express.Multer.File | undefined, @Req() req: Request) {
+    await this.auth.requireViewer(req);
+    if (!file || !isValidImage(file)) throw new BadRequestException('仅支持 5MB 以内的 JPEG、PNG、GIF 或 WebP 图片');
+    const extension = imageExtensions[file.mimetype];
+    const directory = join(uploadDirectory(), 'images');
+    const filename = `${randomUUID()}${extension}`;
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, filename), file.buffer);
+    return { data: { path: `/uploads/images/${filename}` } };
   }
 
   @Get('issues')
@@ -125,4 +143,20 @@ export class IssuesController {
     }).parse(body);
     return { data: await this.issues.vote(number, parsed.choice as VoteChoice, parsed.reason, viewer) };
   }
+}
+
+const imageExtensions: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp'
+};
+
+function isValidImage(file: Express.Multer.File) {
+  if (!imageExtensions[file.mimetype] || file.size > 5 * 1024 * 1024) return false;
+  const buffer = file.buffer;
+  if (file.mimetype === 'image/jpeg') return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (file.mimetype === 'image/png') return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (file.mimetype === 'image/gif') return buffer.length >= 6 && (buffer.subarray(0, 6).toString() === 'GIF87a' || buffer.subarray(0, 6).toString() === 'GIF89a');
+  return buffer.length >= 12 && buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP';
 }

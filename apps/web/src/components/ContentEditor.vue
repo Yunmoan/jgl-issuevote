@@ -21,7 +21,7 @@
         </n-popover>
         <n-popover trigger="click" placement="bottom-start">
           <template #trigger><n-tooltip trigger="hover"><template #trigger><n-button quaternary circle size="small" aria-label="插入图片"><template #icon><n-icon><ImageOutline /></n-icon></template></n-button></template>插入图片</n-tooltip></template>
-          <n-space vertical :size="8" style="width: 280px"><n-input v-model:value="imageUrl" placeholder="图片 URL，例如 https://..." /><n-button type="primary" size="small" :disabled="!imageUrl.trim()" @click="insertImage">插入图片</n-button></n-space>
+          <n-space vertical :size="8" style="width: 280px"><n-button type="primary" :loading="imageUploading" @mousedown.prevent @click="openImageUpload"><template #icon><n-icon><CloudUploadOutline /></n-icon></template>上传图片</n-button><n-text depth="3">支持 JPEG、PNG、GIF、WebP，最大 5MB。</n-text><n-divider>或使用图片链接</n-divider><n-input v-model:value="imageUrl" placeholder="图片 URL，例如 https://..." /><n-button size="small" :disabled="!imageUrl.trim()" @click="insertImage">插入链接图片</n-button><input ref="imageInputRef" class="image-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadImage" /></n-space>
         </n-popover>
       </template>
       <n-button quaternary size="small" @click="togglePreview"><template #icon><n-icon><EyeOutline /></n-icon></template>{{ preview ? '编辑' : '预览' }}</n-button>
@@ -39,16 +39,20 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { ColorPaletteOutline, EyeOutline, ImageOutline, LinkOutline, ListOutline, TextOutline } from '@vicons/ionicons5';
-import { NButton, NCollapseTransition, NColorPicker, NDivider, NDropdown, NIcon, NInput, NPopover, NRadioButton, NRadioGroup, NSpace, NTooltip } from 'naive-ui';
+import { CloudUploadOutline, ColorPaletteOutline, EyeOutline, ImageOutline, LinkOutline, ListOutline, TextOutline } from '@vicons/ionicons5';
+import { NButton, NCollapseTransition, NColorPicker, NDivider, NDropdown, NIcon, NInput, NPopover, NRadioButton, NRadioGroup, NSpace, NText, NTooltip, useMessage } from 'naive-ui';
+import { apiUploadImage, assetUrl } from '../api';
 
 const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; minRows?: number }>(), { placeholder: '输入内容', minRows: 6 });
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 const mode = ref<'markdown' | 'rich'>('rich');
+const message = useMessage();
 const markdown = ref(htmlToMarkdown(props.modelValue));
 const editorRef = ref<HTMLDivElement | null>(null);
+const imageInputRef = ref<HTMLInputElement | null>(null);
 const preview = ref(false);
 const imageUrl = ref('');
+const imageUploading = ref(false);
 const linkUrl = ref('');
 const textColor = ref('#1677ff');
 let selectedRange: Range | null = null;
@@ -105,7 +109,29 @@ function runCommand(command: string, value?: string) {
 function applyBlock(value: string) { runCommand('formatBlock', value); }
 function applyTextColor(value: string) { if (!restoreSelection()) return; document.execCommand('foreColor', false, value); emitRich(); }
 function insertLink() { const url = linkUrl.value.trim(); if (!url || !restoreSelection()) return; document.execCommand('createLink', false, url); linkUrl.value = ''; emitRich(); }
-function insertImage() { const url = imageUrl.value.trim(); if (!url || !restoreSelection()) return; document.execCommand('insertImage', false, url); imageUrl.value = ''; emitRich(); }
+function insertImage() { const url = imageUrl.value.trim(); if (!url) return; insertImageUrl(url); imageUrl.value = ''; }
+function insertImageUrl(url: string) { if (!restoreSelection()) return; document.execCommand('insertImage', false, url); emitRich(); }
+function openImageUpload() { rememberSelection(); imageInputRef.value?.click(); }
+async function uploadImage(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    message.error('仅支持 5MB 以内的 JPEG、PNG、GIF 或 WebP 图片');
+    return;
+  }
+  imageUploading.value = true;
+  try {
+    const result = await apiUploadImage(file);
+    insertImageUrl(assetUrl(result.path));
+    message.success('图片已插入');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '图片上传失败');
+  } finally {
+    imageUploading.value = false;
+  }
+}
 function handlePaste(event: ClipboardEvent) { event.preventDefault(); const text = event.clipboardData?.getData('text/plain') || ''; document.execCommand('insertText', false, text); emitRich(); }
 
 function looksLikeHtml(value: string) { return /<\/?[a-z][\s\S]*>/i.test(value); }
@@ -127,6 +153,7 @@ function htmlToMarkdown(value: string) {
 .rich-editor :deep(img), .content-preview :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px; }
 .content-preview { min-height: 120px; padding: 14px; color: #344054; line-height: 1.8; background: #fafcff; border: 1px dashed #d0d5dd; border-radius: 6px; }
 .editor-color-picker { width: 240px; }
+.image-file-input { display: none; }
 .rich-editor :deep(h2), .content-preview :deep(h2) { margin: 18px 0 10px; font-size: 20px; line-height: 1.4; }
 .rich-editor :deep(h3), .content-preview :deep(h3) { margin: 16px 0 8px; font-size: 17px; line-height: 1.45; }
 .content-preview :deep(pre) { overflow: auto; padding: 12px; background: #f2f4f7; border-radius: 4px; }

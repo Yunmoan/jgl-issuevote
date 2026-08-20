@@ -8,3 +8,4 @@ dist/
 .playwright-cli/
 apps/web/dist/
 apps/api/dist/
+uploads/

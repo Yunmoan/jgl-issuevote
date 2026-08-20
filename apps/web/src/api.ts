@@ -20,6 +20,19 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'DELETE' });
 }
 
+export async function apiUploadImage(file: File): Promise<{ path: string }> {
+  const body = new FormData();
+  body.append('file', file);
+  const response = await fetch(`${API_BASE}/uploads/images`, { method: 'POST', body, credentials: 'include' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || '图片上传失败');
+  return payload.data as { path: string };
+}
+
+export function assetUrl(path: string) {
+  return `${API_BASE.replace(/\/api\/?$/, '')}${path}`;
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
