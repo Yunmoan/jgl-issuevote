@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
@@ -8,8 +8,8 @@ import { createIssueSchema, IssuesService } from './issues.service';
 @Controller()
 export class IssuesController {
   constructor(
-    private readonly auth: AuthService,
-    private readonly issues: IssuesService
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(IssuesService) private readonly issues: IssuesService
   ) {}
 
   @Get('health')
@@ -61,8 +61,16 @@ export class IssuesController {
   }
 
   @Post('issues/:number/vote')
+  async voteByPost(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    return this.castVote(number, body, req);
+  }
+
   @Put('issues/:number/vote')
-  async vote(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+  async voteByPut(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    return this.castVote(number, body, req);
+  }
+
+  private async castVote(number: string, body: unknown, req: Request) {
     const viewer = await this.auth.requireViewer(req);
     const parsed = z.object({
       choice: z.enum(['agree', 'disagree', 'abstain']),

@@ -77,7 +77,7 @@
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { NButton, NDivider, NForm, NInput, NRadioButton, NRadioGroup, NSpin, NStatistic, NTag, useMessage } from 'naive-ui';
-import { apiGet, apiPost, apiPut } from '../api';
+import { apiGet, apiPost } from '../api';
 
 const route = useRoute();
 const message = useMessage();
@@ -100,7 +100,7 @@ async function load() {
 
 async function submitVote() {
   if (!choice.value) return;
-  detail.value = await apiPut(`/issues/${route.params.number}/vote`, { choice: choice.value });
+  detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value });
   choice.value = detail.value.myVote?.choice || choice.value;
   message.success('投票已提交');
 }
@@ -179,4 +179,3 @@ h2 {
   margin: 10px 0;
 }
 </style>
-

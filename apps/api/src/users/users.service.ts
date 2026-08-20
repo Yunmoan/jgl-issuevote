@@ -1,11 +1,11 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
 import { nowSql } from '../db/sql-time';
 import type { Viewer } from '../types';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
 
   requireAdmin(viewer: Viewer) {
     if (!viewer.groups.includes('admin')) throw new ForbiddenException('需要管理员权限');
@@ -145,4 +145,3 @@ function safeJson(value: string | null) {
     return value;
   }
 }
-

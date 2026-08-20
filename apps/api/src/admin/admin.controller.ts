@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
@@ -7,8 +7,8 @@ import { UsersService } from '../users/users.service';
 @Controller('admin')
 export class AdminController {
   constructor(
-    private readonly auth: AuthService,
-    private readonly users: UsersService
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(UsersService) private readonly users: UsersService
   ) {}
 
   @Get('users')
@@ -66,4 +66,3 @@ export class AdminController {
     return { data: await this.users.auditLogs() };
   }
 }
-

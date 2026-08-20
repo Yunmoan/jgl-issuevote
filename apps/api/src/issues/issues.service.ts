@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
@@ -22,7 +22,7 @@ export const createIssueSchema = z.object({
 
 @Injectable()
 export class IssuesService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
 
   async list(query: Record<string, unknown>, viewer: Viewer | null) {
     const conditions = [`i.status <> 'draft'`];
@@ -404,4 +404,3 @@ export class IssuesService {
     );
   }
 }
-

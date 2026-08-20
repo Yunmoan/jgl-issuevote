@@ -5,7 +5,8 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
@@ -14,6 +15,7 @@
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.11.5",
     "reflect-metadata": "^0.2.2",
