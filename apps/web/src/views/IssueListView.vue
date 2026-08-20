@@ -197,7 +197,7 @@ function statusTagType(value: string): 'success' | 'warning' | 'default' {
 }
 
 function outcomeText(value: string) {
-  return { passed: '已通过', rejected: '未通过', manual_required: '等待确认', not_applicable: '纯讨论' }[value] || value;
+  return { passed: '已通过', rejected: '已否决/未通过', manual_required: '等待确认', not_applicable: '纯讨论' }[value] || value;
 }
 
 function outcomeTagType(value: string): 'success' | 'error' | 'warning' | 'default' {
