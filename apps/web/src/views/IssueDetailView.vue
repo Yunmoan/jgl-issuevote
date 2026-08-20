@@ -32,12 +32,11 @@
               <template #header-extra><n-icon color="#1677ff"><BarChartOutline /></n-icon></template>
               <n-alert v-if="!detail.viewer.canVote" type="info" :bordered="false">当前账号没有投票权限，或不在投票时间内。</n-alert>
               <template v-else>
-                <n-radio-group v-model:value="choice" class="vote-options" size="medium">
-                  <n-radio-button value="agree">同意</n-radio-button><n-radio-button value="disagree">不同意</n-radio-button><n-radio-button value="abstain">弃权</n-radio-button>
+                <n-radio-group v-model:value="choice">
+                  <n-space class="vote-options" :size="24" :wrap="true"><n-radio value="agree">同意</n-radio><n-radio value="disagree">不同意</n-radio><n-radio value="abstain">弃权</n-radio></n-space>
                 </n-radio-group>
-                <n-button type="primary" :disabled="!choice" @click="submitVote">{{ detail.myVote ? '更新投票' : '提交投票' }}</n-button>
+                <n-space align="center" :size="12"><n-button type="primary" :disabled="!choice" @click="submitVote">{{ detail.myVote ? '更新投票' : '提交投票' }}</n-button><n-text v-if="detail.myVote" depth="3">当前已投：{{ voteText(detail.myVote.choice) }}</n-text></n-space>
               </template>
-              <span v-if="detail.myVote" class="vote-note">我的选择：{{ voteText(detail.myVote.choice) }}</span>
               <n-divider />
               <n-grid v-if="detail.voteSummary.visible" :cols="3" :x-gap="8">
                 <n-gi><n-statistic label="同意" :value="detail.voteSummary.agree" /></n-gi>
@@ -71,7 +70,7 @@
 
           <aside class="side-stack">
             <n-card title="议题信息" size="small">
-              <n-descriptions label-placement="left" :column="2" size="small" bordered>
+              <n-descriptions label-placement="left" :column="1" size="small" bordered>
                 <n-descriptions-item label="创建人">{{ detail.issue.createdByName }}</n-descriptions-item>
                 <n-descriptions-item label="意见公布">{{ detail.issue.commentPublishAt ? formatTime(detail.issue.commentPublishAt) : '即时公布' }}</n-descriptions-item>
                 <n-descriptions-item label="查看权限">{{ groupNames(detail.issue.viewGroups) || '按可见性' }}</n-descriptions-item>
@@ -91,7 +90,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { BarChartOutline, LockClosedOutline, RefreshOutline, SendOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NList, NListItem, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useDialog, useMessage } from 'naive-ui';
+import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NList, NListItem, NRadio, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useDialog, useMessage } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
 
@@ -106,8 +105,8 @@ const choice = ref<string | null>(null);
 const commentBody = ref('');
 const errorMessage = ref('');
 
-async function load() { loading.value = true; errorMessage.value = ''; try { detail.value = await apiGet(`/issues/${route.params.number}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); choice.value = detail.value.myVote?.choice || null; } catch (error) { detail.value = null; errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。'; } finally { loading.value = false; } }
-async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = detail.value.myVote?.choice || choice.value; message.success('投票已提交'); }
+async function load() { loading.value = true; errorMessage.value = ''; try { detail.value = await apiGet(`/issues/${route.params.number}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); choice.value = null; } catch (error) { detail.value = null; errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。'; } finally { loading.value = false; } }
+async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
 function confirmIssueStatus() {
   const reopening = detail.value.issue.status === 'closed';
@@ -139,9 +138,8 @@ onMounted(load);
 .comment-time { white-space: nowrap; font-size: 13px; }
 .comment-form { display: grid; gap: 4px; }
 .empty-comments { padding: 28px 0; }
-.vote-options { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; }
+.vote-options { margin-bottom: 12px; }
 .vote-card { margin: 0; }
-.vote-note { display: inline-block; margin: 12px 0 0; color: #667085; font-size: 13px; }
 .rendered-content :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px; }
 .rendered-content :deep(pre) { overflow: auto; padding: 12px; background: #f2f4f7; border-radius: 4px; }
 .rendered-content :deep(blockquote) { margin: 12px 0; padding-left: 12px; color: #667085; border-left: 3px solid #91caff; }

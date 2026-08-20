@@ -62,6 +62,7 @@ import { AddOutline, BookOutline, PeopleOutline, RefreshOutline, SaveOutline, Se
 import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import type { DataTableColumns, MenuOption } from 'naive-ui';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api';
+import { displayAuditAction, displayGroup, displayProvider } from '../presentation';
 
 const message = useMessage();
 const dialog = useDialog();
@@ -77,8 +78,8 @@ const menuOptions: MenuOption[] = [
 ];
 const userColumns: DataTableColumns<any> = [
   { title: '用户', key: 'displayName', width: 180, render: (row) => h('div', [h('strong', row.displayName), row.email ? h('div', { class: 'table-secondary' }, row.email) : null]) },
-  { title: '权限组', key: 'groups', minWidth: 190, render: (row) => h('div', { class: 'tag-line' }, row.groups.map((group: string) => h(NTag, { size: 'small', type: group === 'admin' ? 'error' : 'info' }, { default: () => group }))) },
-  { title: '身份源', key: 'boundProviders', width: 150, render: (row) => h('div', { class: 'tag-line' }, row.boundProviders.map((provider: string) => h(NTag, { size: 'small', bordered: false }, { default: () => provider }))) },
+  { title: '权限组', key: 'groups', minWidth: 190, render: (row) => h('div', { class: 'tag-line' }, row.groups.map((group: string) => h(NTag, { size: 'small', type: group === 'admin' ? 'error' : 'info' }, { default: () => displayGroup(group) }))) },
+  { title: '身份源', key: 'boundProviders', width: 150, render: (row) => h('div', { class: 'tag-line' }, row.boundProviders.map((provider: string) => h(NTag, { size: 'small', bordered: false }, { default: () => displayProvider(provider) }))) },
   { title: '状态', key: 'status', width: 96, render: (row) => h(NTag, { type: row.status === 'active' ? 'success' : 'warning' }, { default: () => row.status === 'active' ? '正常' : '已禁用' }) },
   { title: '操作', key: 'actions', width: 154, fixed: 'right', render: (row) => h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => editGroups(row) }, { default: () => '权限组' }), h(NButton, { size: 'small', tertiary: true, type: row.status === 'active' ? 'warning' : 'success', onClick: () => toggleStatus(row) }, { default: () => row.status === 'active' ? '禁用' : '启用' })] }) }
 ];
@@ -86,7 +87,7 @@ const groupColumns: DataTableColumns<any> = [
   { title: '名称', key: 'name', width: 160 }, { title: '标识', key: 'groupKey', width: 150 }, { title: '类型', key: 'kind', width: 100, render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.kind === 'system' ? '系统' : '自定义' }) }, { title: '说明', key: 'description', minWidth: 220 },
   { title: '操作', key: 'actions', width: 150, fixed: 'right', render: (row) => row.kind === 'custom' ? h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => openGroupEditor(row) }, { default: () => '编辑' }), h(NButton, { size: 'small', tertiary: true, type: 'error', onClick: () => confirmDeleteGroup(row) }, { default: () => '删除' })] }) : h(NTag, { size: 'small', bordered: false }, { default: () => '受保护' }) }
 ];
-const auditColumns: DataTableColumns<any> = [{ title: '时间', key: 'createdAt', width: 180, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') }, { title: '操作者', key: 'actorName', width: 140 }, { title: '动作', key: 'action', minWidth: 180 }, { title: '对象', key: 'targetId', minWidth: 180 }];
+const auditColumns: DataTableColumns<any> = [{ title: '时间', key: 'createdAt', width: 180, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') }, { title: '操作者', key: 'actorName', width: 140 }, { title: '动作', key: 'action', minWidth: 180, render: (row) => displayAuditAction(row.action) }, { title: '对象', key: 'targetId', minWidth: 180 }];
 
 async function request<T>(work: () => Promise<T>) { loading.value = true; try { return await work(); } finally { loading.value = false; } }
 async function loadUsers() { users.value = await request(async () => apiGet(`/admin/users?${q.value ? new URLSearchParams({ q: q.value }) : ''}`)); }
