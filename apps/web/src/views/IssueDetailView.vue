@@ -28,19 +28,21 @@
             </n-card>
 
             <n-card title="投票" size="small" class="vote-card">
-              <template #header-extra><n-icon color="#1677ff"><BarChartOutline /></n-icon></template>
+              <template #header-extra><n-tag v-if="detail.myVote" size="small" type="info" :bordered="false">已选择：{{ voteText(detail.myVote.choice) }}</n-tag><n-icon v-else color="#1677ff"><BarChartOutline /></n-icon></template>
               <n-alert v-if="!detail.viewer.canVote" type="info" :bordered="false">当前账号没有投票权限，或不在投票时间内。</n-alert>
               <template v-else>
-                <n-radio-group v-model:value="choice">
-                  <n-space class="vote-options" :size="24" :wrap="true"><n-radio value="agree">同意</n-radio><n-radio value="disagree">不同意</n-radio><n-radio value="abstain">弃权</n-radio></n-space>
+                <n-radio-group v-model:value="choice" class="vote-choice-group">
+                  <n-radio-button value="agree"><n-space align="center" :size="6"><n-icon color="#12b76a"><CheckmarkCircleOutline /></n-icon><span>同意</span></n-space></n-radio-button>
+                  <n-radio-button value="disagree"><n-space align="center" :size="6"><n-icon color="#f04438"><CloseCircleOutline /></n-icon><span>不同意</span></n-space></n-radio-button>
+                  <n-radio-button value="abstain"><n-space align="center" :size="6"><n-icon color="#667085"><RemoveCircleOutline /></n-icon><span>弃权/不参与</span></n-space></n-radio-button>
                 </n-radio-group>
-                <n-space align="center" :size="12"><n-button type="primary" :disabled="!choice" @click="submitVote">{{ detail.myVote ? '更新投票' : '提交投票' }}</n-button><n-text v-if="detail.myVote" depth="3">当前已投：{{ voteText(detail.myVote.choice) }}</n-text></n-space>
+                <n-space class="vote-submit" align="center" :size="12"><n-button type="primary" :disabled="!choice" @click="submitVote">{{ detail.myVote ? '更新投票' : '提交投票' }}</n-button><n-text v-if="!choice" depth="3">请选择一个投票选项。</n-text></n-space>
               </template>
               <n-divider />
               <n-grid v-if="detail.voteSummary.visible" :cols="3" :x-gap="8">
                 <n-gi><n-statistic label="同意" :value="detail.voteSummary.agree" /></n-gi>
                 <n-gi><n-statistic label="反对" :value="detail.voteSummary.disagree" /></n-gi>
-                <n-gi><n-statistic label="弃权" :value="detail.voteSummary.abstain" /></n-gi>
+                <n-gi><n-statistic label="弃权/不参与" :value="detail.voteSummary.abstain" /></n-gi>
               </n-grid>
               <n-text v-else depth="3">投票统计将在设定时间或关闭后公布。</n-text>
             </n-card>
@@ -90,10 +92,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArchiveOutline, BarChartOutline, CreateOutline, LockClosedOutline, RefreshOutline, SendOutline } from '@vicons/ionicons5';
+import { ArchiveOutline, BarChartOutline, CheckmarkCircleOutline, CloseCircleOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NList, NListItem, NModal, NRadio, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useDialog, useMessage } from 'naive-ui';
+import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NList, NListItem, NModal, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useDialog, useMessage } from 'naive-ui';
 import { apiGet, apiPost, apiPut } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
 
@@ -129,7 +131,7 @@ function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim()
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }
 function statusText(value: string) { return { open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
 function visibilityText(value: string) { return { public: '公开可见', login: '登录可见', groups: '群组可见' }[value] || value; }
-function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权' }[value] || value; }
+function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权/不参与' }[value] || value; }
 function groupNames(groups: Array<{ name: string }> = []) { return groups.map((group) => group.name).join('、'); }
 function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }); }
 onMounted(load);
@@ -145,7 +147,9 @@ onMounted(load);
 .comment-time { white-space: nowrap; font-size: 13px; }
 .comment-form { display: grid; gap: 4px; }
 .empty-comments { padding: 28px 0; }
-.vote-options { margin-bottom: 12px; }
+.vote-choice-group { display: flex; width: 100%; margin-bottom: 12px; }
+.vote-choice-group :deep(.n-radio-button) { flex: 1; text-align: center; }
+.vote-submit { min-height: 34px; }
 .vote-card { margin: 0; }
 .rendered-content :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px; }
 .rendered-content :deep(pre) { overflow: auto; padding: 12px; background: #f2f4f7; border-radius: 4px; }

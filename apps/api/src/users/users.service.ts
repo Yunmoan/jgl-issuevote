@@ -145,14 +145,18 @@ export class UsersService {
 
   async publicSiteConfig() {
     const rows = await this.db.rows(
-      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility')`
+      `SELECT setting_key, setting_value FROM system_settings
+       WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, safeJson(row.setting_value)]));
+    const siteName = typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联议事';
     return {
-      siteName: typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联议事',
+      siteName,
       siteDescription: typeof values.site_description === 'string' ? values.site_description : '',
       siteNotice: typeof values.site_notice === 'string' ? values.site_notice : '',
-      defaultIssueVisibility: ['public', 'login', 'groups'].includes(String(values.default_issue_visibility)) ? values.default_issue_visibility : 'login'
+      defaultIssueVisibility: ['public', 'login', 'groups'].includes(String(values.default_issue_visibility)) ? values.default_issue_visibility : 'login',
+      footerText: typeof values.footer_text === 'string' && values.footer_text.trim() ? values.footer_text.trim() : `版权所有 © ${new Date().getFullYear()} ${siteName}`,
+      watermarkMode: ['off', 'global', 'issue'].includes(String(values.watermark_mode)) ? values.watermark_mode : 'off'
     };
   }
 

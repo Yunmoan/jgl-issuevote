@@ -1,9 +1,9 @@
 <template>
-  <n-config-provider :theme-overrides="themeOverrides">
+  <n-config-provider :theme="naiveTheme" :theme-overrides="themeOverrides">
     <n-loading-bar-provider>
       <n-message-provider>
         <n-dialog-provider>
-          <n-layout class="app-shell">
+          <n-layout class="app-shell" :class="{ 'is-dark': resolvedTheme === 'dark' }">
             <n-layout-header bordered class="topbar">
               <div class="topbar-inner">
                 <RouterLink class="brand" to="/" :aria-label="siteName">
@@ -12,26 +12,27 @@
                 </RouterLink>
                 <n-menu class="desktop-menu" mode="horizontal" :value="activeKey" :options="menuOptions" @update:value="navigate" />
                 <div class="top-actions">
-                  <n-button v-if="!session.viewer && session.providers?.natayarkid.enabled" quaternary @click="session.loginWithNatayarkId">
-                    <template #icon><n-icon><LogInOutline /></n-icon></template>登录
-                  </n-button>
+                  <n-button-group class="theme-switcher">
+                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'system' ? 'primary' : 'default'" aria-label="跟随系统" @click="setTheme('system')"><template #icon><n-icon><DesktopOutline /></n-icon></template></n-button></template>跟随系统</n-tooltip>
+                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'light' ? 'primary' : 'default'" aria-label="浅色模式" @click="setTheme('light')"><template #icon><n-icon><SunnyOutline /></n-icon></template></n-button></template>浅色模式</n-tooltip>
+                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'dark' ? 'primary' : 'default'" aria-label="深色模式" @click="setTheme('dark')"><template #icon><n-icon><MoonOutline /></n-icon></template></n-button></template>深色模式</n-tooltip>
+                  </n-button-group>
+                  <n-button v-if="!session.viewer && session.providers?.natayarkid.enabled" quaternary @click="session.loginWithNatayarkId"><template #icon><n-icon><LogInOutline /></n-icon></template>登录</n-button>
                   <n-button v-if="!session.viewer && session.providers?.devLogin" quaternary @click="session.devLogin">开发登录</n-button>
                   <RouterLink v-if="session.viewer" class="viewer-link" to="/me">
                     <n-avatar round :size="32" :src="session.viewer.avatarUrl || undefined">{{ session.viewer.displayName.slice(0, 1) }}</n-avatar>
                     <span>{{ session.viewer.displayName }}</span>
                   </RouterLink>
-                  <n-button class="mobile-menu-button" quaternary circle aria-label="打开导航" @click="showMobileNav = true">
-                    <template #icon><n-icon><MenuOutline /></n-icon></template>
-                  </n-button>
+                  <n-button class="mobile-menu-button" quaternary circle aria-label="打开导航" @click="showMobileNav = true"><template #icon><n-icon><MenuOutline /></n-icon></template></n-button>
                 </div>
               </div>
             </n-layout-header>
             <n-layout-content class="page"><RouterView /></n-layout-content>
+            <n-layout-footer bordered class="site-footer"><div>{{ footerText }}</div></n-layout-footer>
           </n-layout>
+          <n-watermark v-if="showWatermark" fullscreen :selectable="false" :content="siteName" :font-size="14" :rotate="-20" :x-gap="170" :y-gap="110" :font-color="resolvedTheme === 'dark' ? 'rgba(255, 255, 255, .09)' : 'rgba(22, 119, 255, .10)'" />
           <n-drawer v-model:show="showMobileNav" placement="right" :width="280">
-            <n-drawer-content :title="siteName" closable body-content-style="padding: 8px">
-              <n-menu :value="activeKey" :options="menuOptions" @update:value="navigate" />
-            </n-drawer-content>
+            <n-drawer-content :title="siteName" closable body-content-style="padding: 8px"><n-menu :value="activeKey" :options="menuOptions" @update:value="navigate" /></n-drawer-content>
           </n-drawer>
         </n-dialog-provider>
       </n-message-provider>
@@ -42,17 +43,28 @@
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { CheckmarkCircleOutline, CreateOutline, DocumentTextOutline, LogInOutline, MenuOutline, PersonOutline, SettingsOutline } from '@vicons/ionicons5';
-import { NAvatar, NButton, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider } from 'naive-ui';
+import { CheckmarkCircleOutline, CreateOutline, DesktopOutline, DocumentTextOutline, LogInOutline, MenuOutline, MoonOutline, PersonOutline, SettingsOutline, SunnyOutline } from '@vicons/ionicons5';
+import { darkTheme, NAvatar, NButton, NButtonGroup, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NTooltip, NWatermark } from 'naive-ui';
 import type { MenuOption } from 'naive-ui';
 import { apiGet } from './api';
 import { useSessionStore } from './stores/session';
+
+type ThemePreference = 'system' | 'light' | 'dark';
+type WatermarkMode = 'off' | 'global' | 'issue';
 
 const session = useSessionStore();
 const route = useRoute();
 const router = useRouter();
 const siteName = ref('冀高联议事');
+const footerText = ref(`版权所有 © ${new Date().getFullYear()} 冀高联议事`);
+const watermarkMode = ref<WatermarkMode>('off');
 const showMobileNav = ref(false);
+const prefersDark = ref(false);
+let systemThemeQuery: MediaQueryList | null = null;
+const themePreference = ref<ThemePreference>(readThemePreference());
+const resolvedTheme = computed(() => themePreference.value === 'system' ? (prefersDark.value ? 'dark' : 'light') : themePreference.value);
+const naiveTheme = computed(() => resolvedTheme.value === 'dark' ? darkTheme : null);
+const showWatermark = computed(() => watermarkMode.value === 'global' || (watermarkMode.value === 'issue' && route.path.startsWith('/issues/')));
 const themeOverrides = { common: { primaryColor: '#1677ff', primaryColorHover: '#4096ff', primaryColorPressed: '#0958d9', primaryColorSuppl: '#1677ff', borderRadius: '6px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } };
 
 function icon(component: any) { return () => h(NIcon, null, { default: () => h(component) }); }
@@ -66,15 +78,27 @@ const menuOptions = computed<MenuOption[]>(() => {
 const activeKey = computed(() => route.path.startsWith('/issues/new') ? '/issues/new' : route.path.startsWith('/admin') ? '/admin' : route.path.startsWith('/me') ? '/me' : '/');
 
 function navigate(key: string) { showMobileNav.value = false; router.push(key); }
+function setTheme(value: ThemePreference) { themePreference.value = value; localStorage.setItem('jgl-theme-preference', value); }
+function readThemePreference(): ThemePreference { const value = localStorage.getItem('jgl-theme-preference'); return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'; }
 async function loadSiteConfig() {
-  try { siteName.value = (await apiGet<{ siteName: string }>('/site-config')).siteName; } catch { /* A config failure must not block rendering. */ }
+  try {
+    const config = await apiGet<{ siteName: string; footerText?: string; watermarkMode?: WatermarkMode }>('/site-config');
+    siteName.value = config.siteName;
+    footerText.value = config.footerText || footerText.value;
+    watermarkMode.value = config.watermarkMode || 'off';
+  } catch { /* A config failure must not block rendering. */ }
 }
-
-function updateSiteName(event: Event) {
-  const value = (event as CustomEvent<string>).detail;
-  if (typeof value === 'string' && value.trim()) siteName.value = value.trim();
-}
+function updateSiteConfig(event: Event) { const value = (event as CustomEvent<Partial<{ siteName: string; footerText: string; watermarkMode: WatermarkMode }>>).detail; if (value?.siteName?.trim()) siteName.value = value.siteName.trim(); if (typeof value?.footerText === 'string') footerText.value = value.footerText.trim() || `版权所有 © ${new Date().getFullYear()} ${siteName.value}`; if (value?.watermarkMode) watermarkMode.value = value.watermarkMode; }
+function updateSystemTheme(event: MediaQueryListEvent) { prefersDark.value = event.matches; }
 watch(siteName, (value) => { document.title = value; }, { immediate: true });
-onMounted(() => { session.load().catch(() => undefined); loadSiteConfig(); window.addEventListener('site-config-updated', updateSiteName); });
-onBeforeUnmount(() => window.removeEventListener('site-config-updated', updateSiteName));
+watch(resolvedTheme, (value) => { document.documentElement.style.colorScheme = value; });
+onMounted(() => {
+  systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  prefersDark.value = systemThemeQuery.matches;
+  systemThemeQuery.addEventListener('change', updateSystemTheme);
+  session.load().catch(() => undefined);
+  loadSiteConfig();
+  window.addEventListener('site-config-updated', updateSiteConfig);
+});
+onBeforeUnmount(() => { systemThemeQuery?.removeEventListener('change', updateSystemTheme); window.removeEventListener('site-config-updated', updateSiteConfig); });
 </script>
