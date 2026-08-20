@@ -2,13 +2,15 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req }
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
+import { IssuesService } from '../issues/issues.service';
 import { UsersService } from '../users/users.service';
 
 @Controller('admin')
 export class AdminController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
-    @Inject(UsersService) private readonly users: UsersService
+    @Inject(UsersService) private readonly users: UsersService,
+    @Inject(IssuesService) private readonly issues: IssuesService
   ) {}
 
   @Get('users')
@@ -43,6 +45,30 @@ export class AdminController {
     const viewer = await this.auth.requireViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.groups() };
+  }
+
+  @Get('labels')
+  async labels(@Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.adminLabels(viewer) };
+  }
+
+  @Post('labels')
+  async createLabel(@Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.createLabel(labelSchema.parse(body), viewer) };
+  }
+
+  @Patch('labels/:id')
+  async updateLabel(@Param('id') id: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.updateLabel(labelIdSchema.parse(id), labelSchema.parse(body), viewer) };
+  }
+
+  @Delete('labels/:id')
+  async deleteLabel(@Param('id') id: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.deleteLabel(labelIdSchema.parse(id), viewer) };
   }
 
   @Post('groups')
@@ -94,3 +120,9 @@ const groupSchema = z.object({
   isAssignable: z.boolean().default(true)
 });
 const groupUpdateSchema = groupSchema.omit({ groupKey: true });
+const labelIdSchema = z.coerce.number().int().positive();
+const labelSchema = z.object({
+  name: z.string().min(1).max(40),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  description: z.string().max(200).nullable().optional()
+});

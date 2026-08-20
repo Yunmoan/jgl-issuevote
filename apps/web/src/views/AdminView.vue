@@ -16,6 +16,12 @@
           <n-data-table :columns="groupColumns" :data="groups" :loading="loading" :scroll-x="820" />
         </n-card>
 
+        <n-card v-else-if="active === 'labels'" title="议题标签" size="large">
+          <template #header-extra><n-space><n-button tertiary @click="loadLabels"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button><n-button type="primary" @click="openLabelEditor()"><template #icon><n-icon><AddOutline /></n-icon></template>新建标签</n-button></n-space></template>
+          <n-alert type="info" :bordered="false" class="card-note">标签用于组织和筛选议题。已被议题使用的标签不可删除，但可修改名称、颜色和说明。</n-alert>
+          <n-data-table :columns="labelColumns" :data="labels" :loading="loading" :scroll-x="760" />
+        </n-card>
+
         <n-card v-else-if="active === 'settings'" title="站点设置" size="large">
           <template #header-extra><n-button tertiary @click="loadSettings"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button></template>
           <n-form label-placement="top" class="settings-form">
@@ -56,27 +62,38 @@
       </n-form>
       <template #footer><n-space justify="end"><n-button @click="showGroupEditor = false">取消</n-button><n-button type="primary" :loading="savingGroup" @click="saveGroup">保存</n-button></n-space></template>
     </n-modal>
+
+    <n-modal v-model:show="showLabelEditor" preset="card" :title="editingLabel ? '编辑议题标签' : '新建议题标签'" :style="{ width: 'min(520px, calc(100vw - 24px))' }" :bordered="false">
+      <n-form label-placement="top">
+        <n-form-item label="标签名称"><n-input v-model:value="labelForm.name" maxlength="40" show-count placeholder="例如：财务" /></n-form-item>
+        <n-form-item label="标签颜色"><n-color-picker v-model:value="labelForm.color" :show-alpha="false" /></n-form-item>
+        <n-form-item label="说明"><n-input v-model:value="labelForm.description" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" maxlength="200" /></n-form-item>
+      </n-form>
+      <template #footer><n-space justify="end"><n-button @click="showLabelEditor = false">取消</n-button><n-button type="primary" :loading="savingLabel" @click="saveLabel">保存</n-button></n-space></template>
+    </n-modal>
   </main>
 </template>
 
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, watch } from 'vue';
-import { AddOutline, BookOutline, PeopleOutline, RefreshOutline, SaveOutline, SearchOutline, SettingsOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NInputNumber, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
+import { AddOutline, BookOutline, PeopleOutline, PricetagOutline, RefreshOutline, SaveOutline, SearchOutline, SettingsOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5';
+import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NColorPicker, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NInputNumber, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import type { DataTableColumns, MenuOption } from 'naive-ui';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api';
 import { displayAuditAction, displayGroup, displayProvider } from '../presentation';
 
 const message = useMessage();
 const dialog = useDialog();
-const active = ref('users'); const q = ref(''); const loading = ref(false); const users = ref<any[]>([]); const groups = ref<any[]>([]); const auditLogs = ref<any[]>([]);
+const active = ref('users'); const q = ref(''); const loading = ref(false); const users = ref<any[]>([]); const groups = ref<any[]>([]); const labels = ref<any[]>([]); const auditLogs = ref<any[]>([]);
 const siteName = ref('冀高联议事'); const siteDescription = ref(''); const siteNotice = ref(''); const footerText = ref(''); const defaultIssueVisibility = ref('login'); const closedIssueArchiveAfterDays = ref<number | null>(7); const watermarkMode = ref('off'); const savingSite = ref(false); const showGroups = ref(false); const selectedUser = ref<any>(null); const selectedGroups = ref<string[]>([]); const savingGroups = ref(false);
 const showGroupEditor = ref(false); const editingGroup = ref<any>(null); const savingGroup = ref(false); const groupForm = reactive({ groupKey: '', name: '', description: '', isAssignable: true });
+const showLabelEditor = ref(false); const editingLabel = ref<any>(null); const savingLabel = ref(false); const labelForm = reactive({ name: '', color: '#1677ff', description: '' });
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const watermarkOptions = [{ label: '关闭', value: 'off' }, { label: '全局水印', value: 'global' }, { label: '仅议题页水印', value: 'issue' }];
 const menuOptions: MenuOption[] = [
   { label: '用户管理', key: 'users', icon: () => h(NIcon, null, { default: () => h(PeopleOutline) }) },
   { label: '权限组', key: 'groups', icon: () => h(NIcon, null, { default: () => h(ShieldCheckmarkOutline) }) },
+  { label: '议题标签', key: 'labels', icon: () => h(NIcon, null, { default: () => h(PricetagOutline) }) },
   { label: '站点设置', key: 'settings', icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }) },
   { label: '审计日志', key: 'audit', icon: () => h(NIcon, null, { default: () => h(BookOutline) }) }
 ];
@@ -91,11 +108,18 @@ const groupColumns: DataTableColumns<any> = [
   { title: '名称', key: 'name', width: 160 }, { title: '标识', key: 'groupKey', width: 150 }, { title: '类型', key: 'kind', width: 100, render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.kind === 'system' ? '系统' : '自定义' }) }, { title: '说明', key: 'description', minWidth: 220 },
   { title: '操作', key: 'actions', width: 150, fixed: 'right', render: (row) => row.kind === 'custom' ? h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => openGroupEditor(row) }, { default: () => '编辑' }), h(NButton, { size: 'small', tertiary: true, type: 'error', onClick: () => confirmDeleteGroup(row) }, { default: () => '删除' })] }) : h(NTag, { size: 'small', bordered: false }, { default: () => '受保护' }) }
 ];
+const labelColumns: DataTableColumns<any> = [
+  { title: '标签', key: 'name', width: 170, render: (row) => h(NTag, { size: 'small', bordered: false, color: { color: `${row.color}1f`, textColor: row.color } }, { default: () => row.name }) },
+  { title: '说明', key: 'description', minWidth: 220, render: (row) => row.description || '未填写' },
+  { title: '使用议题', key: 'issueCount', width: 110, render: (row) => `${row.issueCount} 个` },
+  { title: '操作', key: 'actions', width: 150, fixed: 'right', render: (row) => h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => openLabelEditor(row) }, { default: () => '编辑' }), h(NButton, { size: 'small', tertiary: true, type: 'error', disabled: row.issueCount > 0, onClick: () => confirmDeleteLabel(row) }, { default: () => '删除' })] }) }
+];
 const auditColumns: DataTableColumns<any> = [{ title: '时间', key: 'createdAt', width: 180, render: (row) => new Date(row.createdAt).toLocaleString('zh-CN') }, { title: '操作者', key: 'actorName', width: 140 }, { title: '动作', key: 'action', minWidth: 180, render: (row) => displayAuditAction(row.action) }, { title: '对象', key: 'targetId', minWidth: 180 }];
 
 async function request<T>(work: () => Promise<T>) { loading.value = true; try { return await work(); } finally { loading.value = false; } }
 async function loadUsers() { users.value = await request(async () => apiGet(`/admin/users?${q.value ? new URLSearchParams({ q: q.value }) : ''}`)); }
 async function loadGroups() { groups.value = await request(() => apiGet('/admin/groups')); }
+async function loadLabels() { labels.value = await request(() => apiGet('/admin/labels')); }
 async function loadAudit() { auditLogs.value = await request(() => apiGet('/admin/audit-logs')); }
 async function loadSettings() { const settings = await request(() => apiGet<Array<{ key: string; value: unknown }>>('/admin/settings')); const value = (key: string, fallback: unknown = ''): unknown => settings.find((setting) => setting.key === key)?.value ?? fallback; siteName.value = String(value('site_name', '冀高联议事')); siteDescription.value = String(value('site_description')); siteNotice.value = String(value('site_notice')); footerText.value = String(value('footer_text')); defaultIssueVisibility.value = String(value('default_issue_visibility', 'login')); closedIssueArchiveAfterDays.value = Number(value('closed_issue_archive_after_days', 7)); watermarkMode.value = String(value('watermark_mode', 'off')); }
 async function saveSiteName() { if (!siteName.value.trim()) return; savingSite.value = true; try { const name = siteName.value.trim(); const footer = footerText.value.trim(); await Promise.all([apiPatch('/admin/settings', { key: 'site_name', value: name }), apiPatch('/admin/settings', { key: 'site_description', value: siteDescription.value.trim() }), apiPatch('/admin/settings', { key: 'site_notice', value: siteNotice.value.trim() }), apiPatch('/admin/settings', { key: 'footer_text', value: footer }), apiPatch('/admin/settings', { key: 'default_issue_visibility', value: defaultIssueVisibility.value }), apiPatch('/admin/settings', { key: 'closed_issue_archive_after_days', value: closedIssueArchiveAfterDays.value || 7 }), apiPatch('/admin/settings', { key: 'watermark_mode', value: watermarkMode.value })]); window.dispatchEvent(new CustomEvent('site-config-updated', { detail: { siteName: name, footerText: footer, watermarkMode: watermarkMode.value } })); message.success('站点设置已保存'); } finally { savingSite.value = false; } }
@@ -105,7 +129,10 @@ async function saveGroups() { if (!selectedUser.value) return; savingGroups.valu
 function openGroupEditor(group?: any) { editingGroup.value = group || null; groupForm.groupKey = group?.groupKey || ''; groupForm.name = group?.name || ''; groupForm.description = group?.description || ''; groupForm.isAssignable = group?.isAssignable ?? true; showGroupEditor.value = true; }
 async function saveGroup() { if (!groupForm.name.trim() || (!editingGroup.value && !/^[a-z][a-z0-9_]{1,79}$/.test(groupForm.groupKey))) { message.error('请填写名称和有效的权限组标识'); return; } savingGroup.value = true; try { const input = { name: groupForm.name.trim(), description: groupForm.description.trim() || null, isAssignable: groupForm.isAssignable }; if (editingGroup.value) await apiPatch(`/admin/groups/${encodeURIComponent(editingGroup.value.groupKey)}`, input); else await apiPost('/admin/groups', { ...input, groupKey: groupForm.groupKey }); message.success(editingGroup.value ? '权限组已更新' : '权限组已创建'); showGroupEditor.value = false; loadGroups(); } finally { savingGroup.value = false; } }
 function confirmDeleteGroup(group: any) { dialog.error({ title: '删除权限组', content: `确定删除“${group.name}”吗？未被成员或议题使用的自定义权限组才可删除。`, positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/admin/groups/${encodeURIComponent(group.groupKey)}`); message.success('权限组已删除'); loadGroups(); } catch (error) { message.error(error instanceof Error ? error.message : '删除失败'); return false; } } }); }
-async function loadActive() { if (active.value === 'users') await loadUsers(); if (active.value === 'groups') await loadGroups(); if (active.value === 'settings') await loadSettings(); if (active.value === 'audit') await loadAudit(); }
+function openLabelEditor(label?: any) { editingLabel.value = label || null; labelForm.name = label?.name || ''; labelForm.color = label?.color || '#1677ff'; labelForm.description = label?.description || ''; showLabelEditor.value = true; }
+async function saveLabel() { if (!labelForm.name.trim()) { message.error('请填写标签名称'); return; } savingLabel.value = true; try { const input = { name: labelForm.name.trim(), color: labelForm.color, description: labelForm.description.trim() || null }; if (editingLabel.value) await apiPatch(`/admin/labels/${editingLabel.value.id}`, input); else await apiPost('/admin/labels', input); message.success(editingLabel.value ? '标签已更新' : '标签已创建'); showLabelEditor.value = false; loadLabels(); } finally { savingLabel.value = false; } }
+function confirmDeleteLabel(label: any) { dialog.error({ title: '删除议题标签', content: `确定删除“${label.name}”吗？删除后不可恢复。`, positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/admin/labels/${label.id}`); message.success('标签已删除'); loadLabels(); } catch (error) { message.error(error instanceof Error ? error.message : '删除失败'); return false; } } }); }
+async function loadActive() { if (active.value === 'users') await loadUsers(); if (active.value === 'groups') await loadGroups(); if (active.value === 'labels') await loadLabels(); if (active.value === 'settings') await loadSettings(); if (active.value === 'audit') await loadAudit(); }
 watch(active, loadActive); onMounted(loadActive);
 </script>
 

@@ -27,7 +27,17 @@
                 </div>
               </div>
             </n-layout-header>
-            <n-layout-content class="page"><RouterView /></n-layout-content>
+            <n-layout-content class="page">
+              <Transition name="page-fade" mode="out-in">
+                <div v-if="routeLoading" key="route-skeleton" class="page-skeleton content-wrap">
+                  <n-skeleton text :repeat="1" width="26%" size="medium" />
+                  <n-skeleton text :repeat="1" width="48%" />
+                  <div class="skeleton-panel"><n-skeleton text :repeat="5" /></div>
+                  <div class="skeleton-panel"><n-skeleton text :repeat="3" /></div>
+                </div>
+                <RouterView v-else v-slot="{ Component }"><component :is="Component" :key="route.fullPath" /></RouterView>
+              </Transition>
+            </n-layout-content>
             <n-layout-footer bordered class="site-footer"><div>{{ footerText }}</div></n-layout-footer>
           </n-layout>
           <n-watermark v-if="showWatermark" fullscreen :selectable="false" :content="siteName" :font-size="14" :rotate="-20" :x-gap="170" :y-gap="110" :font-color="resolvedTheme === 'dark' ? 'rgba(255, 255, 255, .09)' : 'rgba(22, 119, 255, .10)'" />
@@ -44,7 +54,7 @@
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CheckmarkCircleOutline, CreateOutline, DesktopOutline, DocumentTextOutline, LogInOutline, MenuOutline, MoonOutline, PersonOutline, SettingsOutline, SunnyOutline } from '@vicons/ionicons5';
-import { darkTheme, NAvatar, NButton, NButtonGroup, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NTooltip, NWatermark } from 'naive-ui';
+import { darkTheme, NAvatar, NButton, NButtonGroup, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NSkeleton, NTooltip, NWatermark } from 'naive-ui';
 import type { MenuOption } from 'naive-ui';
 import { apiGet } from './api';
 import { useSessionStore } from './stores/session';
@@ -59,8 +69,10 @@ const siteName = ref('冀高联议事');
 const footerText = ref(`版权所有 © ${new Date().getFullYear()} 冀高联议事`);
 const watermarkMode = ref<WatermarkMode>('off');
 const showMobileNav = ref(false);
+const routeLoading = ref(false);
 const prefersDark = ref(false);
 let systemThemeQuery: MediaQueryList | null = null;
+let routeLoadingTimer: number | null = null;
 const themePreference = ref<ThemePreference>(readThemePreference());
 const resolvedTheme = computed(() => themePreference.value === 'system' ? (prefersDark.value ? 'dark' : 'light') : themePreference.value);
 const naiveTheme = computed(() => resolvedTheme.value === 'dark' ? darkTheme : null);
@@ -90,6 +102,8 @@ async function loadSiteConfig() {
 }
 function updateSiteConfig(event: Event) { const value = (event as CustomEvent<Partial<{ siteName: string; footerText: string; watermarkMode: WatermarkMode }>>).detail; if (value?.siteName?.trim()) siteName.value = value.siteName.trim(); if (typeof value?.footerText === 'string') footerText.value = value.footerText.trim() || `版权所有 © ${new Date().getFullYear()} ${siteName.value}`; if (value?.watermarkMode) watermarkMode.value = value.watermarkMode; }
 function updateSystemTheme(event: MediaQueryListEvent) { prefersDark.value = event.matches; }
+const removeBeforeNavigation = router.beforeEach(() => { if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer); routeLoading.value = true; });
+const removeAfterNavigation = router.afterEach(() => { routeLoadingTimer = window.setTimeout(() => { routeLoading.value = false; routeLoadingTimer = null; }, 160); });
 watch(siteName, (value) => { document.title = value; }, { immediate: true });
 watch(resolvedTheme, (value) => { document.documentElement.style.colorScheme = value; });
 onMounted(() => {
@@ -100,5 +114,5 @@ onMounted(() => {
   loadSiteConfig();
   window.addEventListener('site-config-updated', updateSiteConfig);
 });
-onBeforeUnmount(() => { systemThemeQuery?.removeEventListener('change', updateSystemTheme); window.removeEventListener('site-config-updated', updateSiteConfig); });
+onBeforeUnmount(() => { if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer); removeBeforeNavigation(); removeAfterNavigation(); systemThemeQuery?.removeEventListener('change', updateSystemTheme); window.removeEventListener('site-config-updated', updateSiteConfig); });
 </script>

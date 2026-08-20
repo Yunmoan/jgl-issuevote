@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
@@ -359,6 +359,60 @@ export class IssuesService implements OnModuleInit {
     return this.db.rows(`SELECT id, name, color, description FROM labels ORDER BY name`);
   }
 
+  async adminLabels(viewer: Viewer) {
+    this.requireAdmin(viewer);
+    const rows = await this.db.rows(
+      `SELECT l.id, l.name, l.color, l.description, COUNT(il.issue_id) AS issue_count
+       FROM labels l
+       LEFT JOIN issue_labels il ON il.label_id = l.id
+       GROUP BY l.id
+       ORDER BY l.name`
+    );
+    return rows.map((row) => ({ id: Number(row.id), name: row.name, color: row.color, description: row.description, issueCount: Number(row.issue_count) }));
+  }
+
+  async createLabel(input: { name: string; color: string; description?: string | null }, viewer: Viewer) {
+    this.requireAdmin(viewer);
+    try {
+      const result = await this.db.exec(
+        `INSERT INTO labels (name, color, description, created_at) VALUES (:name, :color, :description, :now)`,
+        { name: input.name, color: input.color, description: input.description || null, now: nowSql() }
+      );
+      await this.audit(viewer.id, 'label.create', 'label', String(result.insertId), input);
+      return { id: Number(result.insertId), ...input };
+    } catch (error: any) {
+      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('标签名称已存在');
+      throw error;
+    }
+  }
+
+  async updateLabel(labelId: number, input: { name: string; color: string; description?: string | null }, viewer: Viewer) {
+    this.requireAdmin(viewer);
+    const existing = await this.db.first(`SELECT id FROM labels WHERE id = :labelId`, { labelId });
+    if (!existing) throw new NotFoundException('标签不存在');
+    try {
+      await this.db.exec(
+        `UPDATE labels SET name = :name, color = :color, description = :description WHERE id = :labelId`,
+        { labelId, name: input.name, color: input.color, description: input.description || null }
+      );
+      await this.audit(viewer.id, 'label.update', 'label', String(labelId), input);
+      return { ok: true };
+    } catch (error: any) {
+      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('标签名称已存在');
+      throw error;
+    }
+  }
+
+  async deleteLabel(labelId: number, viewer: Viewer) {
+    this.requireAdmin(viewer);
+    const usage = await this.db.first(`SELECT COUNT(*) AS count FROM issue_labels WHERE label_id = :labelId`, { labelId });
+    if (Number(usage?.count || 0) > 0) throw new ConflictException('该标签已被议题使用，无法删除');
+    const result = await this.db.exec(`DELETE FROM labels WHERE id = :labelId`, { labelId });
+    if (result.affectedRows === 0) throw new NotFoundException('标签不存在');
+    await this.audit(viewer.id, 'label.delete', 'label', String(labelId), {});
+    return { ok: true };
+  }
+
   private async canViewIssue(issue: any, viewer: Viewer | null) {
     if (viewer?.groups.includes('admin')) return true;
     if (issue.visibility === 'public') return true;
@@ -463,6 +517,10 @@ export class IssuesService implements OnModuleInit {
     if (!groups.some((group) => viewer.groups.includes(group))) {
       throw new ForbiddenException('权限不足');
     }
+  }
+
+  private requireAdmin(viewer: Viewer) {
+    if (!viewer.groups.includes('admin')) throw new ForbiddenException('需要管理员权限');
   }
 
   private requireIssueManager(detail: Awaited<ReturnType<IssuesService['getByNumber']>>, viewer: Viewer) {
