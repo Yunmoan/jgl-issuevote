@@ -49,6 +49,8 @@ npm run dev:web
 
 开发环境可使用“开发登录”进入系统，默认账号拥有管理员、理事会成员和议题创建权限。
 
+飞书网页应用启用 `FEISHU_ENABLED=true` 并配置 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后，系统会在飞书 / Lark 容器内自动请求授权码并创建站内会话。`FEISHU_ALLOWED_TENANT_KEYS` 可限制允许的组织；普通浏览器不会触发该免登流程。
+
 ## 常用命令
 
 ```bash
@@ -59,4 +61,3 @@ npm run build
 ## 文档
 
 系统架构、数据库、认证、API、UI 和多 agent 拆分说明见 [docs/README.md](./docs/README.md)。
-

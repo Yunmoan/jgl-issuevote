@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
 import type { VoteChoice } from '../types';
 import { createIssueSchema, IssuesService } from './issues.service';
+import { UsersService } from '../users/users.service';
 
 @Controller()
 export class IssuesController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
-    @Inject(IssuesService) private readonly issues: IssuesService
+    @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(UsersService) private readonly users: UsersService
   ) {}
 
   @Get('health')
@@ -20,6 +22,12 @@ export class IssuesController {
   @Get('labels')
   async labels() {
     return { data: await this.issues.labels() };
+  }
+
+  @Get('permission-groups')
+  async permissionGroups(@Req() req: Request) {
+    await this.auth.requireViewer(req);
+    return { data: await this.users.groups() };
   }
 
   @Get('issues')

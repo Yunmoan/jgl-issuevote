@@ -6,7 +6,7 @@
     <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
       <n-card title="基本信息" size="large">
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>
-        <n-form-item label="议题说明" path="bodyMd"><n-input v-model:value="form.bodyMd" type="textarea" :autosize="{ minRows: 9, maxRows: 18 }" placeholder="说明背景、可选方案、执行影响或需要讨论的重点。" /></n-form-item>
+        <n-form-item label="议题说明" path="bodyMd"><ContentEditor v-model="form.bodyMd" :min-rows="9" placeholder="说明背景、可选方案、执行影响或需要讨论的重点。支持 Markdown、图片与基本富文本。" /></n-form-item>
         <n-form-item label="标签"><n-select v-model:value="form.labelIds" multiple :options="labelOptions" placeholder="选择议题分类" /></n-form-item>
       </n-card>
 
@@ -42,6 +42,7 @@ import { AddCircleOutline } from '@vicons/ionicons5';
 import { NAffix, NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NSelect, NSpace, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
+import ContentEditor from '../components/ContentEditor.vue';
 
 const router = useRouter();
 const message = useMessage();
@@ -67,9 +68,13 @@ async function submit() {
   } finally { submitting.value = false; }
 }
 onMounted(async () => {
-  const [groups, labels] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/admin/groups'), apiGet<Array<{ id: number; name: string }>>('/labels')]);
-  groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
-  labelOptions.value = labels.map((label) => ({ label: label.name, value: label.id }));
+  try {
+    const [groups, labels] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels')]);
+    groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
+    labelOptions.value = labels.map((label) => ({ label: label.name, value: label.id }));
+  } catch {
+    message.error('无法读取创建议题所需的权限配置，请确认已登录。');
+  }
 });
 </script>
 

@@ -19,7 +19,9 @@ export class AuthService {
     return {
       feishu: {
         enabled: process.env.FEISHU_ENABLED === 'true',
-        autoLogin: process.env.FEISHU_ENABLED === 'true'
+        autoLogin: process.env.FEISHU_ENABLED === 'true' && Boolean(process.env.FEISHU_APP_ID),
+        appId: process.env.FEISHU_ENABLED === 'true' ? process.env.FEISHU_APP_ID || null : null,
+        sdkUrl: process.env.FEISHU_WEB_SDK_URL || 'https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js'
       },
       natayarkid: {
         enabled: process.env.NYK_ENABLED !== 'false',
@@ -168,6 +170,9 @@ export class AuthService {
   }
 
   async loginWithFeishuCode(code: string, res: Response) {
+    if (process.env.FEISHU_ENABLED !== 'true') {
+      throw new UnauthorizedException('飞书登录未启用');
+    }
     const appId = requiredEnv('FEISHU_APP_ID');
     const appSecret = requiredEnv('FEISHU_APP_SECRET');
     const appTokenResponse = await axios.post('https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal', {
