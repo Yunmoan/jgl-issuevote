@@ -46,9 +46,11 @@ export const useSessionStore = defineStore('session', {
       this.viewer = await apiPost<Viewer>('/auth/dev-login');
     },
     loginWithNatayarkId() {
+      if (!this.providers?.natayarkid.enabled) return;
       window.location.href = authStartUrl('natayarkid');
     },
     linkNatayarkId() {
+      if (!this.providers?.natayarkid.enabled) return;
       window.location.href = authStartUrl('natayarkid', 'link');
     },
     async autoLoginWithFeishu() {

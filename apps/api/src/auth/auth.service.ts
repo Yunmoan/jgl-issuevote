@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import axios from 'axios';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -27,7 +27,7 @@ export class AuthService {
         sdkUrl: feishuWebSdkUrl()
       },
       natayarkid: {
-        enabled: process.env.NYK_ENABLED !== 'false',
+        enabled: this.natayarkIdEnabled(),
         authorizationUrl: process.env.NYK_OAUTH_AUTHORIZATION_URL || 'https://account.naids.com/oauth2/authorize'
       },
       devLogin: process.env.NODE_ENV !== 'production'
@@ -117,6 +117,7 @@ export class AuthService {
   }
 
   async startNatayarkId(res: Response, linkUserId?: string) {
+    this.assertNatayarkIdEnabled();
     const clientId = requiredEnv('NYK_OAUTH_CLIENT_ID');
     const redirectUri = requiredEnv('NYK_OAUTH_REDIRECT_URI');
     const authorizationUrl = process.env.NYK_OAUTH_AUTHORIZATION_URL || 'https://account.naids.com/oauth2/authorize';
@@ -134,6 +135,7 @@ export class AuthService {
   }
 
   async handleNatayarkIdCallback(req: Request, res: Response) {
+    this.assertNatayarkIdEnabled();
     const code = String(req.query.code || '');
     const state = String(req.query.state || '');
     if (!code || !state || state !== req.cookies?.[NYK_STATE_COOKIE]) {
@@ -478,6 +480,14 @@ export class AuthService {
     if (allowed.length > 0 && (!tenantKey || !allowed.includes(tenantKey))) {
       throw new UnauthorizedException('飞书组织不在允许范围内');
     }
+  }
+
+  private natayarkIdEnabled() {
+    return process.env.NYK_ENABLED?.trim().toLowerCase() !== 'false';
+  }
+
+  private assertNatayarkIdEnabled() {
+    if (!this.natayarkIdEnabled()) throw new ForbiddenException('NatayarkID 登录未启用');
   }
 }
 

@@ -20,7 +20,7 @@
           </template>
           创建议题
         </n-button>
-        <n-button v-else-if="!session.viewer" secondary @click="session.loginWithNatayarkId">登录以创建议题</n-button>
+        <n-button v-else-if="!session.viewer && session.providers?.natayarkid.enabled" secondary @click="session.loginWithNatayarkId">登录以创建议题</n-button>
       </div>
     </div>
 
