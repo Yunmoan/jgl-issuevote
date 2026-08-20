@@ -106,6 +106,7 @@ CREATE TABLE issues (
   body_md MEDIUMTEXT NOT NULL,
   status ENUM('draft', 'open', 'voting', 'closed', 'archived') NOT NULL DEFAULT 'open',
   visibility ENUM('public', 'login', 'groups') NOT NULL DEFAULT 'login',
+  voting_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   comment_publish_at DATETIME NULL,
   vote_starts_at DATETIME NULL,
   vote_ends_at DATETIME NULL,
@@ -114,6 +115,9 @@ CREATE TABLE issues (
   quorum_count INT UNSIGNED NULL,
   pass_rule ENUM('simple_majority', 'two_thirds', 'custom') NOT NULL DEFAULT 'simple_majority',
   custom_pass_rule_json LONGTEXT NULL,
+  outcome ENUM('pending', 'passed', 'rejected', 'manual_required', 'not_applicable') NOT NULL DEFAULT 'pending',
+  outcome_confirmed_by BIGINT UNSIGNED NULL,
+  outcome_confirmed_at DATETIME NULL,
   created_by BIGINT UNSIGNED NOT NULL,
   closed_by BIGINT UNSIGNED NULL,
   closed_at DATETIME NULL,
@@ -125,7 +129,8 @@ CREATE TABLE issues (
   KEY idx_issue_visibility (visibility),
   KEY idx_issue_vote_window (vote_starts_at, vote_ends_at),
   CONSTRAINT fk_issue_created_by FOREIGN KEY (created_by) REFERENCES users(id),
-  CONSTRAINT fk_issue_closed_by FOREIGN KEY (closed_by) REFERENCES users(id)
+  CONSTRAINT fk_issue_closed_by FOREIGN KEY (closed_by) REFERENCES users(id),
+  CONSTRAINT fk_issue_outcome_confirmed_by FOREIGN KEY (outcome_confirmed_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE issue_labels (

@@ -58,6 +58,8 @@
                   <template #header>
                     <n-space align="center" :size="8">
                       <span class="issue-title">{{ issue.title }}</span>
+                      <n-tag size="small" :type="statusTagType(issue.status)" :bordered="false">{{ statusText(issue.status) }}</n-tag>
+                      <n-tag v-if="issue.outcome !== 'pending'" size="small" :type="outcomeTagType(issue.outcome)" :bordered="false">{{ outcomeText(issue.outcome) }}</n-tag>
                       <n-tag
                         v-for="label in issue.labels"
                         :key="label.id"
@@ -117,6 +119,8 @@ interface IssueRow {
   title: string;
   status: string;
   visibility: string;
+  votingEnabled: boolean;
+  outcome: string;
   commentCount: number;
   voteCount: number;
   updatedAt: string;
@@ -134,7 +138,7 @@ const siteConfig = ref({ siteDescription: '', siteNotice: '' });
 
 const statusTabs = [
   { key: 'all', label: '全部', value: null, icon: ListOutline, color: '#344054' },
-  { key: 'open', label: '开放', value: 'open', icon: RadioButtonOnOutline, color: '#12b76a' },
+  { key: 'open', label: '已开启', value: 'open', icon: RadioButtonOnOutline, color: '#12b76a' },
   { key: 'voting', label: '投票中', value: 'voting', icon: SyncOutline, color: '#f79009' },
   { key: 'closed', label: '已关闭', value: 'closed', icon: CheckmarkCircleOutline, color: '#7a5af8' },
   { key: 'archived', label: '归档', value: 'archived', icon: BanOutline, color: '#667085' }
@@ -168,6 +172,22 @@ function statusMeta(value: string) {
 
 function visibilityText(value: string) {
   return { public: '公开', login: '登录可见', groups: '群组可见' }[value] || value;
+}
+
+function statusText(value: string) {
+  return { open: '开放讨论', voting: '投票中', closed: '已关闭', archived: '已归档' }[value] || value;
+}
+
+function statusTagType(value: string): 'success' | 'warning' | 'default' {
+  return value === 'voting' ? 'warning' : value === 'open' ? 'success' : 'default';
+}
+
+function outcomeText(value: string) {
+  return { passed: '已通过', rejected: '未通过', manual_required: '等待确认', not_applicable: '纯讨论' }[value] || value;
+}
+
+function outcomeTagType(value: string): 'success' | 'error' | 'warning' | 'default' {
+  return { passed: 'success', rejected: 'error', manual_required: 'warning', not_applicable: 'default' }[value] as 'success' | 'error' | 'warning' | 'default' || 'default';
 }
 
 function labelBg(color: string) {

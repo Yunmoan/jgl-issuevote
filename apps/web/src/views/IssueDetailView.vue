@@ -14,6 +14,7 @@
             <n-space class="issue-tags" :size="6">
               <n-tag :type="detail.issue.status === 'closed' ? 'default' : 'success'">{{ statusText(detail.issue.status)
                 }}</n-tag>
+              <n-tag v-if="detail.issue.outcome !== 'pending'" :type="outcomeTagType(detail.issue.outcome)" :bordered="false">{{ outcomeText(detail.issue.outcome) }}</n-tag>
               <n-tag :bordered="false">{{ visibilityText(detail.issue.visibility) }}</n-tag>
               <n-tag v-for="label in detail.issue.labels" :key="label.id"
                 :color="{ color: `${label.color}1a`, textColor: label.color }">{{ label.name }}</n-tag>
@@ -21,16 +22,21 @@
             <n-text v-if="detail.issue.contentEditedAt" depth="3" class="edited-note">已编辑 {{
               formatTime(detail.issue.contentEditedAt) }}</n-text>
           </div>
-          <n-space :size="8"><n-button v-if="detail.viewer.canEdit && detail.issue.status !== 'archived'" tertiary
-              @click="showEditor = true"><template #icon><n-icon>
+          <n-space :size="8"><n-button v-if="detail.viewer.canEdit && detail.issue.status !== 'archived'" key="edit" tertiary
+              @click="openEditor"><template #icon><n-icon>
                   <CreateOutline />
-                </n-icon></template>编辑</n-button><n-button
-              v-if="detail.viewer.canEdit && detail.issue.status !== 'archived'"
+                </n-icon></template>编辑</n-button><n-button v-if="detail.viewer.canStartVoting" key="start-voting" type="primary" secondary @click="confirmStartVoting"><template #icon><n-icon><PlayCircleOutline /></n-icon></template>开始投票</n-button><n-button
+              key="close"
+              v-if="detail.viewer.canEdit && ['open', 'voting'].includes(detail.issue.status)"
               :type="detail.issue.status === 'closed' ? 'primary' : 'default'" secondary
               @click="confirmIssueStatus"><template #icon><n-icon>
                   <component :is="detail.issue.status === 'closed' ? RefreshOutline : LockClosedOutline" />
                 </n-icon></template>{{
-                  detail.issue.status === 'closed' ? '重新开启' : '关闭议题' }}</n-button><n-button
+                  detail.issue.status === 'closed' ? '重新开启' : detail.issue.status === 'voting' ? '结束投票' : '关闭议题' }}</n-button><n-button key="reopen"
+              v-if="detail.viewer.canEdit && detail.issue.status === 'closed'" type="primary" secondary @click="confirmIssueStatus"><template #icon><n-icon><RefreshOutline /></n-icon></template>重新开启</n-button><n-button
+              key="confirm-outcome"
+              v-if="detail.viewer.canConfirmOutcome" type="warning" secondary @click="confirmOutcome"><template #icon><n-icon><CheckmarkCircleOutline /></n-icon></template>确认结果</n-button><n-button
+              key="archive"
               v-if="detail.viewer.canModerate && detail.issue.status === 'closed'" type="warning" secondary
               @click="confirmArchive"><template #icon><n-icon>
                   <ArchiveOutline />
@@ -43,12 +49,13 @@
               <div class="markdown-body rendered-content" v-html="renderContent(detail.issue.bodyMd)" />
             </n-card>
 
-            <n-card title="表决/投票" size="small" class="vote-card">
-              <template #header-extra><n-space align="center" :size="8"><n-text>{{ detail.myVote ? '您已表决' : '尚未表决' }}</n-text><n-tag v-if="detail.myVote" size="small" :type="voteTagType(detail.myVote.choice)"
-                  :bordered="false">{{ voteText(detail.myVote.choice) }}</n-tag><n-icon v-else color="#1677ff">
-                  <BarChartOutline />
-                </n-icon></n-space></template>
-              <n-alert v-if="!detail.viewer.canVote" type="info" :bordered="false">当前账号没有投票权限，或不在投票时间内。</n-alert>
+            <n-card :title="detail.issue.votingEnabled ? '表决/投票' : '讨论设置'" size="small" class="vote-card">
+              <template v-if="detail.issue.votingEnabled" #header-extra><n-space align="center" :size="8"><n-text>{{ detail.myVote ? '您已表决' : '尚未表决' }}</n-text><n-tag v-if="detail.myVote" size="small" :type="voteTagType(detail.myVote.choice)"
+                  :bordered="false">{{ voteText(detail.myVote.choice) }}</n-tag><n-icon v-else color="#1677ff"><BarChartOutline /></n-icon></n-space></template>
+              <template v-if="!detail.issue.votingEnabled"><n-alert type="info" :bordered="false">本议题未启用投票器，仅开放讨论。</n-alert></template>
+              <template v-else>
+              <n-alert v-if="detail.issue.passRule === 'custom'" type="info" :bordered="false" class="custom-rule">自定义通过规则：{{ detail.issue.customPassRule }}</n-alert>
+              <n-alert v-if="!detail.viewer.canVote" type="info" :bordered="false">{{ voteDisabledText }}</n-alert>
               <template v-else>
                 <n-radio-group v-model:value="choice" :disabled="voteChangeBlocked" class="vote-choice-group">
                   <n-radio-button value="agree"><n-space align="center" :size="6"><n-icon color="#12b76a">
@@ -59,7 +66,7 @@
                       </n-icon><span>不同意</span></n-space></n-radio-button>
                   <n-radio-button value="abstain"><n-space align="center" :size="6"><n-icon color="#667085">
                         <RemoveCircleOutline />
-                      </n-icon><span>弃权/不参与</span></n-space></n-radio-button>
+                      </n-icon><span>弃权</span></n-space></n-radio-button>
                 </n-radio-group>
                 <n-space class="vote-submit" align="center" :size="12"><n-button type="primary" :disabled="!canSubmitVote"
                     @click="submitVote">{{ detail.myVote ? '重新投票' : '提交投票' }}</n-button><n-text v-if="voteHint"
@@ -69,9 +76,10 @@
               <n-grid v-if="detail.voteSummary.visible" :cols="3" :x-gap="8">
                 <n-gi><n-statistic label="同意" :value="detail.voteSummary.agree" /></n-gi>
                 <n-gi><n-statistic label="反对" :value="detail.voteSummary.disagree" /></n-gi>
-                <n-gi><n-statistic label="弃权/不参与" :value="detail.voteSummary.abstain" /></n-gi>
+                <n-gi><n-statistic label="弃权" :value="detail.voteSummary.abstain" /></n-gi>
               </n-grid>
               <n-text v-else depth="3">投票统计将在设定时间或关闭后公布。</n-text>
+              </template>
             </n-card>
 
             <n-card class="comments-card" title="意见" size="large">
@@ -133,6 +141,19 @@
             <n-card title="议题信息" size="small">
               <n-descriptions label-placement="left" :column="1" size="small" bordered>
                 <n-descriptions-item label="创建人">{{ detail.issue.createdByName }}</n-descriptions-item>
+                <n-descriptions-item label="议题状态">{{ statusText(detail.issue.status) }}</n-descriptions-item>
+                <n-descriptions-item label="议题结果"><n-tag size="small" :type="outcomeTagType(detail.issue.outcome)" :bordered="false">{{ outcomeText(detail.issue.outcome) }}</n-tag></n-descriptions-item>
+                <n-descriptions-item v-if="detail.issue.outcomeConfirmedAt" label="结果确认">{{ detail.issue.outcomeConfirmedByName || '管理员' }} · {{ formatTime(detail.issue.outcomeConfirmedAt) }}</n-descriptions-item>
+                <n-descriptions-item label="投票器">{{ detail.issue.votingEnabled ? '已启用' : '未启用（纯讨论）' }}</n-descriptions-item>
+                <template v-if="detail.issue.votingEnabled">
+                  <n-descriptions-item label="投票开始">{{ detail.issue.voteStartsAt ? formatTime(detail.issue.voteStartsAt) : '由创建者手动开始' }}</n-descriptions-item>
+                  <n-descriptions-item label="投票结束">{{ detail.issue.voteEndsAt ? formatTime(detail.issue.voteEndsAt) : '由创建者手动结束' }}</n-descriptions-item>
+                  <n-descriptions-item label="结果可见">{{ voteVisibilityText(detail.issue.voteVisibility) }}</n-descriptions-item>
+                  <n-descriptions-item label="通过规则">{{ passRuleText(detail.issue.passRule) }}</n-descriptions-item>
+                  <n-descriptions-item v-if="detail.issue.passRule === 'custom'" label="规则说明">{{ detail.issue.customPassRule }}</n-descriptions-item>
+                  <n-descriptions-item label="投票权限">{{ groupNames(detail.issue.voteGroups) || '所有可见用户' }}</n-descriptions-item>
+                  <n-descriptions-item label="重投规则">{{ revotePolicy }}</n-descriptions-item>
+                </template>
                 <n-descriptions-item label="意见公布">{{ detail.issue.commentPublishAt ?
                   formatTime(detail.issue.commentPublishAt) :
                   '即时公布' }}</n-descriptions-item>
@@ -144,32 +165,51 @@
                 <n-descriptions-item label="最后更新">{{ formatTime(detail.issue.updatedAt) }}</n-descriptions-item>
                 <n-descriptions-item label="查看权限">{{ groupNames(detail.issue.viewGroups) || '按可见性'
                   }}</n-descriptions-item>
-                <n-descriptions-item label="投票权限">{{ groupNames(detail.issue.voteGroups) || '可见用户'
-                  }}</n-descriptions-item>
-                <n-descriptions-item label="重投规则">{{ revotePolicy }}</n-descriptions-item>
               </n-descriptions>
             </n-card>
           </aside>
         </div>
       </template>
     </n-spin>
-    <n-modal v-model:show="showEditor" preset="card" title="编辑议题" :style="{ width: 'min(900px, calc(100vw - 24px))' }"
-      :bordered="false"><n-form label-placement="top"><n-form-item label="议题标题"><n-input
-            v-model:value="editTitle" /></n-form-item><n-form-item label="议题说明">
-          <ContentEditor v-model="editBody" :min-rows="8" />
-        </n-form-item></n-form><template #footer><n-space justify="end"><n-button
-            @click="showEditor = false">取消</n-button><n-button type="primary" :loading="savingEdit"
-            @click="saveEdit">保存修改</n-button></n-space></template></n-modal>
+    <n-modal v-model:show="showEditor" preset="card" title="编辑议题" :style="{ width: 'min(900px, calc(100vw - 24px))' }" :bordered="false">
+      <n-form label-placement="top">
+        <n-form-item label="议题标题"><n-input v-model:value="editTitle" /></n-form-item>
+        <n-form-item label="议题说明"><ContentEditor v-model="editBody" :min-rows="8" /></n-form-item>
+        <n-grid :cols="2" :x-gap="16" responsive="screen" item-responsive>
+          <n-gi span="2 720:1"><n-form-item label="可见范围"><n-select v-model:value="editVisibility" :options="visibilityOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="editViewGroupKeys" multiple :options="groupOptions" :disabled="editVisibility !== 'groups'" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="分类"><n-select v-model:value="editLabelIds" multiple :options="labelOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="editCommentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="editCommentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="editMaxCommentsPerUser" :min="1" :max="100" style="width: 100%" /></n-form-item></n-gi>
+        </n-grid>
+        <n-checkbox v-model:checked="editVotingEnabled">启用投票器</n-checkbox>
+        <n-grid v-if="editVotingEnabled" :cols="2" :x-gap="16" responsive="screen" item-responsive class="edit-vote-grid">
+          <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="editVoteGroupKeys" multiple :options="groupOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="editVoteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="editVoteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="editVoteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="editPassRule" :options="passRuleOptions" /></n-form-item></n-gi>
+          <n-gi v-if="editPassRule === 'custom'" span="2"><n-form-item label="自定义通过规则"><n-input v-model:value="editCustomPassRule" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" maxlength="500" show-count /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="每人最多重投次数"><n-input-number v-model:value="editMaxVoteChanges" :min="0" :max="100" :disabled="!editAllowVoteChange" style="width: 100%" /></n-form-item></n-gi>
+        </n-grid>
+        <n-checkbox v-if="editVotingEnabled" v-model:checked="editAllowVoteChange" class="edit-revote">投票结束前允许重新投票</n-checkbox>
+      </n-form>
+      <template #footer><n-space justify="end"><n-button @click="showEditor = false">取消</n-button><n-button type="primary" :loading="savingEdit" @click="saveEdit">保存修改</n-button></n-space></template>
+    </n-modal>
+    <n-modal v-model:show="showCloseDialog" preset="dialog" title="关闭议题" positive-text="确认关闭" negative-text="取消" @positive-click="closeIssue" @negative-click="showCloseDialog = false">
+      <n-space vertical :size="12"><n-text>关闭后将停止讨论和投票。请选择关闭后的可见范围。</n-text><n-radio-group v-model:value="closeVisibility"><n-space vertical><n-radio value="retain">保持现有可见范围</n-radio><n-radio value="public">公开给所有访客</n-radio></n-space></n-radio-group></n-space>
+    </n-modal>
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArchiveOutline, BarChartOutline, ChatbubbleOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
+import { ArchiveOutline, BarChartOutline, ChatbubbleOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, PlayCircleOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NList, NListItem, NModal, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { NAlert, NAvatar, NBadge, NButton, NCard, NCheckbox, NDatePicker, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NList, NListItem, NModal, NRadio, NRadioButton, NRadioGroup, NResult, NSelect, NSpace, NSpin, NStatistic, NTag, NText, NThing, NTooltip, useDialog, useMessage } from 'naive-ui';
 import { apiGet, apiPost, apiPut } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
 
@@ -184,6 +224,12 @@ const choice = ref<string | null>(null);
 const commentBody = ref('');
 const errorMessage = ref('');
 const showEditor = ref(false); const savingEdit = ref(false); const editTitle = ref(''); const editBody = ref('');
+const editVisibility = ref('login'); const editViewGroupKeys = ref<string[]>([]); const editVoteGroupKeys = ref<string[]>([]); const editLabelIds = ref<number[]>([]);
+const editCommentPublishAt = ref<number | null>(null); const editCommentEndsAt = ref<number | null>(null); const editMaxCommentsPerUser = ref(3);
+const editVotingEnabled = ref(true); const editVoteStartsAt = ref<number | null>(null); const editVoteEndsAt = ref<number | null>(null); const editVoteVisibility = ref('counts_after_close');
+const editAllowVoteChange = ref(true); const editMaxVoteChanges = ref(1); const editPassRule = ref('simple_majority'); const editCustomPassRule = ref('');
+const groupOptions = ref<Array<{ label: string; value: string }>>([]); const labelOptions = ref<Array<{ label: string; value: number }>>([]);
+const showCloseDialog = ref(false); const closeVisibility = ref<'retain' | 'public'>('retain'); const closingIssue = ref(false);
 const editingCommentId = ref<string | null>(null); const editingCommentBody = ref(''); const savingComment = ref(false);
 const replyingCommentId = ref<string | null>(null); const replyBody = ref(''); const submittingReply = ref(false);
 const voteChangeBlocked = computed(() => Boolean(detail.value?.myVote) && (!detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0 || detail.value.myVote.changeCount >= detail.value.issue.maxVoteChanges));
@@ -205,8 +251,32 @@ const commentDisabledText = computed(() => {
   if (detail.value.viewer.commentCount >= detail.value.issue.maxCommentsPerUser) return `每位成员最多可发表 ${detail.value.issue.maxCommentsPerUser} 条意见。`;
   return '登录并具备权限后可发表意见。';
 });
+const voteDisabledText = computed(() => {
+  if (!detail.value?.issue) return '';
+  if (detail.value.issue.status === 'open') return detail.value.issue.voteStartsAt ? '投票尚未开始，将按设定时间自动开始。' : '等待议题创建者开始投票。';
+  if (detail.value.issue.status === 'closed') return '投票已经结束。';
+  if (detail.value.issue.status === 'archived') return '议题已归档。';
+  return '当前账号没有投票权限。';
+});
+const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
+const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
+const passRuleOptions = [{ label: '简单多数通过', value: 'simple_majority' }, { label: '三分之二多数通过', value: 'two_thirds' }, { label: '自定义规则', value: 'custom' }];
 
-async function load() { loading.value = true; errorMessage.value = ''; try { detail.value = await apiGet(`/issues/${route.params.number}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); choice.value = null; editTitle.value = detail.value.issue.title; editBody.value = detail.value.issue.bodyMd; } catch (error) { detail.value = null; errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。'; } finally { loading.value = false; } }
+async function load() {
+  loading.value = true;
+  errorMessage.value = '';
+  try {
+    detail.value = await apiGet(`/issues/${route.params.number}`);
+    comments.value = await apiGet(`/issues/${route.params.number}/comments`);
+    choice.value = null;
+    syncEditFields();
+  } catch (error) {
+    detail.value = null;
+    errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。';
+  } finally {
+    loading.value = false;
+  }
+}
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
 async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { if (!comment.viewerCanReact) return; const result = await apiPost<{ reactionCounts: Record<string, number>; myReactions: string[] }>(`/issues/${route.params.number}/comments/${comment.id}/reactions`, { reaction }); comment.reactionCounts = result.reactionCounts; comment.myReactions = result.myReactions; }
@@ -218,22 +288,87 @@ function cancelCommentEdit() { editingCommentId.value = null; editingCommentBody
 async function saveCommentEdit(commentId: string) { if (!hasContent(editingCommentBody.value)) return; savingComment.value = true; try { await apiPut(`/issues/${route.params.number}/comments/${commentId}`, { bodyMd: editingCommentBody.value }); await load(); cancelCommentEdit(); message.success('意见已保存'); } finally { savingComment.value = false; } }
 function confirmIssueStatus() {
   const reopening = detail.value.issue.status === 'closed';
+  if (!reopening) {
+    closeVisibility.value = 'retain';
+    showCloseDialog.value = true;
+    return;
+  }
   dialog.warning({
-    title: reopening ? '重新开启议题' : '关闭议题',
-    content: reopening ? '重新开启后，符合权限的成员可继续讨论和投票。' : '关闭后将停止投票，结果会按议题规则公布。',
-    positiveText: reopening ? '确认重新开启' : '确认关闭',
+    title: '重新开启议题',
+    content: '重新开启后，议题会回到开放讨论状态；未设置自动时间的投票需由创建者再次开始。',
+    positiveText: '确认重新开启',
     negativeText: '取消',
-    onPositiveClick: () => updateIssueStatus(reopening)
+    onPositiveClick: () => updateIssueStatus(true)
   });
 }
-async function updateIssueStatus(reopening: boolean) { try { detail.value = await apiPost(`/issues/${route.params.number}/${reopening ? 'reopen' : 'close'}`); message.success(reopening ? '议题已重新开启' : '议题已关闭'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
+async function closeIssue() {
+  closingIssue.value = true;
+  try {
+    detail.value = await apiPost(`/issues/${route.params.number}/close`, { visibility: closeVisibility.value });
+    showCloseDialog.value = false;
+    message.success(detail.value.issue.votingEnabled ? '投票已结束，议题已关闭' : '议题已关闭');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '操作失败');
+  } finally {
+    closingIssue.value = false;
+  }
+}
+async function updateIssueStatus(reopening: boolean) { try { detail.value = await apiPost(`/issues/${route.params.number}/${reopening ? 'reopen' : 'close'}`, reopening ? undefined : { visibility: 'retain' }); message.success(reopening ? '议题已重新开启' : '议题已关闭'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
+function confirmStartVoting() { dialog.warning({ title: '开始投票', content: '开始后，符合投票权限的成员即可提交投票。', positiveText: '确认开始', negativeText: '取消', onPositiveClick: async () => { try { detail.value = await apiPost(`/issues/${route.params.number}/start-voting`); message.success('投票已开始'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } } }); }
+function confirmOutcome() { dialog.warning({ title: '确认议题结果', content: '自定义规则需要由审计员或管理员确认最终结果。', positiveText: '确认通过', negativeText: '确认未通过', onPositiveClick: () => submitOutcome('passed'), onNegativeClick: () => submitOutcome('rejected') }); }
+async function submitOutcome(outcome: 'passed' | 'rejected') { try { detail.value = await apiPost(`/issues/${route.params.number}/outcome`, { outcome }); message.success(outcome === 'passed' ? '已确认议题通过' : '已确认议题未通过'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
 function confirmArchive() { dialog.warning({ title: '归档议题', content: '归档后议题将停止讨论和投票，且不可重新开启。', positiveText: '确认归档', negativeText: '取消', onPositiveClick: async () => { try { detail.value = await apiPost(`/issues/${route.params.number}/archive`); message.success('议题已归档'); } catch (error) { message.error(error instanceof Error ? error.message : '归档失败'); return false; } } }); }
-async function saveEdit() { if (!editTitle.value.trim() || !hasContent(editBody.value)) return; savingEdit.value = true; try { const issue = detail.value.issue; detail.value = await apiPut(`/issues/${route.params.number}`, { title: editTitle.value, bodyMd: editBody.value, visibility: issue.visibility, viewGroupKeys: issue.viewGroups.map((group: any) => group.groupKey), voteGroupKeys: issue.voteGroups.map((group: any) => group.groupKey), labelIds: issue.labels.map((label: any) => label.id), commentPublishAt: issue.commentPublishAt ? new Date(issue.commentPublishAt).toISOString() : null, commentEndsAt: issue.commentEndsAt ? new Date(issue.commentEndsAt).toISOString() : null, voteStartsAt: issue.voteStartsAt ? new Date(issue.voteStartsAt).toISOString() : null, voteEndsAt: issue.voteEndsAt ? new Date(issue.voteEndsAt).toISOString() : null, voteVisibility: issue.voteVisibility, allowVoteChange: issue.allowVoteChange, maxVoteChanges: issue.maxVoteChanges, maxCommentsPerUser: issue.maxCommentsPerUser, quorumCount: issue.quorumCount, passRule: issue.passRule }); showEditor.value = false; message.success('议题已保存'); } finally { savingEdit.value = false; } }
+async function openEditor() {
+  syncEditFields();
+  try {
+    const [groups, labels] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels')]);
+    groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
+    labelOptions.value = labels.map((label) => ({ label: label.name, value: Number(label.id) }));
+    showEditor.value = true;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法读取编辑选项');
+  }
+}
+async function saveEdit() {
+  if (!editTitle.value.trim() || !hasContent(editBody.value)) return;
+  savingEdit.value = true;
+  try {
+    detail.value = await apiPut(`/issues/${route.params.number}`, {
+      title: editTitle.value.trim(), bodyMd: editBody.value, visibility: editVisibility.value, viewGroupKeys: editViewGroupKeys.value,
+      voteGroupKeys: editVoteGroupKeys.value, labelIds: editLabelIds.value, commentPublishAt: toIso(editCommentPublishAt.value),
+      commentEndsAt: toIso(editCommentEndsAt.value), maxCommentsPerUser: editMaxCommentsPerUser.value, votingEnabled: editVotingEnabled.value,
+      voteStartsAt: editVotingEnabled.value ? toIso(editVoteStartsAt.value) : null, voteEndsAt: editVotingEnabled.value ? toIso(editVoteEndsAt.value) : null,
+      voteVisibility: editVoteVisibility.value, allowVoteChange: editAllowVoteChange.value, maxVoteChanges: editMaxVoteChanges.value,
+      quorumCount: detail.value.issue.quorumCount, passRule: editPassRule.value, customPassRule: editPassRule.value === 'custom' ? editCustomPassRule.value.trim() : null
+    });
+    showEditor.value = false;
+    message.success('议题已保存');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存失败');
+  } finally {
+    savingEdit.value = false;
+  }
+}
+function syncEditFields() {
+  if (!detail.value?.issue) return;
+  const issue = detail.value.issue;
+  editTitle.value = issue.title; editBody.value = issue.bodyMd; editVisibility.value = issue.visibility;
+  editViewGroupKeys.value = issue.viewGroups.map((group: any) => group.groupKey); editVoteGroupKeys.value = issue.voteGroups.map((group: any) => group.groupKey);
+  editLabelIds.value = issue.labels.map((label: any) => Number(label.id)); editCommentPublishAt.value = toPickerValue(issue.commentPublishAt); editCommentEndsAt.value = toPickerValue(issue.commentEndsAt);
+  editMaxCommentsPerUser.value = issue.maxCommentsPerUser; editVotingEnabled.value = issue.votingEnabled; editVoteStartsAt.value = toPickerValue(issue.voteStartsAt); editVoteEndsAt.value = toPickerValue(issue.voteEndsAt);
+  editVoteVisibility.value = issue.voteVisibility; editAllowVoteChange.value = issue.allowVoteChange; editMaxVoteChanges.value = issue.maxVoteChanges; editPassRule.value = issue.passRule; editCustomPassRule.value = issue.customPassRule || '';
+}
+function toPickerValue(value: string | null) { return value ? new Date(value).getTime() : null; }
+function toIso(value: number | null) { return value ? new Date(value).toISOString() : null; }
 function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim().length > 0; }
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }
 function statusText(value: string) { return { open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
+function outcomeText(value: string) { return { pending: '结果待定', passed: '已通过', rejected: '未通过', manual_required: '等待人工确认', not_applicable: '不适用投票' }[value] || value; }
+function outcomeTagType(value: string): 'success' | 'error' | 'warning' | 'default' { return { passed: 'success', rejected: 'error', manual_required: 'warning', not_applicable: 'default', pending: 'default' }[value] as 'success' | 'error' | 'warning' | 'default' || 'default'; }
 function visibilityText(value: string) { return { public: '公开可见', login: '登录可见', groups: '群组可见' }[value] || value; }
-function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权/不参与' }[value] || value; }
+function voteVisibilityText(value: string) { return { counts_after_vote: '投票后即时公布统计', counts_after_close: '结束后公布统计', names_after_close: '结束后公布姓名与统计', admin_only: '仅管理员可见' }[value] || value; }
+function passRuleText(value: string) { return { simple_majority: '简单多数通过', two_thirds: '三分之二多数通过', custom: '自定义规则' }[value] || value; }
+function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权' }[value] || value; }
 function voteTagType(value: string): 'success' | 'error' | 'warning' | 'default' { return { agree: 'success', disagree: 'error', abstain: 'warning' }[value] as 'success' | 'error' | 'warning' | undefined || 'default'; }
 function reactionActive(comment: any, reaction: string) { return comment.myReactions?.includes(reaction); }
 function hasReactions(comment: any) { return Object.values(comment.reactionCounts || {}).some((count) => Number(count) > 0); }

@@ -142,19 +142,34 @@ export class AuthService {
     const userInfoUrl = process.env.NYK_OAUTH_USERINFO_URL || 'https://account.naids.com/api/api/user/data';
 
     const hashedSecret = await bcrypt.hash(clientSecret, 10);
-    const tokenResponse = await axios.post(tokenUrl, {
-      grant_type: 'authorization_code',
-      code,
-      client_id: clientId,
-      client_secret: hashedSecret,
-      redirect_uri: encodeURIComponent(redirectUri)
-    });
+    let tokenResponse;
+    try {
+      // NatayarkID's token endpoint parses form data, while its redirect URI
+      // contract expects the URI itself to remain URL-encoded after parsing.
+      const tokenBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: clientId,
+        client_secret: hashedSecret,
+        redirect_uri: encodeURIComponent(redirectUri)
+      });
+      tokenResponse = await axios.post(tokenUrl, tokenBody, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+    } catch (error) {
+      this.throwNatayarkIdRequestError('授权码换取', error);
+    }
     const accessToken = tokenResponse.data?.access_token || tokenResponse.data?.data?.access_token;
     if (!accessToken) throw new UnauthorizedException('NatayarkID 未返回 access_token');
 
-    const profileResponse = await axios.get(userInfoUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
+    let profileResponse;
+    try {
+      profileResponse = await axios.get(userInfoUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+    } catch (error) {
+      this.throwNatayarkIdRequestError('用户信息读取', error);
+    }
     const data = profileResponse.data?.data;
     if (!data?.id) throw new UnauthorizedException('NatayarkID 用户信息缺少 id');
 
@@ -417,6 +432,13 @@ export class AuthService {
     const authorization = req.header('authorization');
     if (!authorization?.startsWith('Bearer ')) return null;
     return authorization.slice('Bearer '.length);
+  }
+
+  private throwNatayarkIdRequestError(operation: string, error: unknown): never {
+    if (axios.isAxiosError(error) && error.response?.status && error.response.status < 500) {
+      throw new UnauthorizedException(`NatayarkID ${operation}失败，授权已失效或配置不匹配，请重新发起登录`);
+    }
+    throw new UnauthorizedException(`NatayarkID ${operation}服务暂时不可用，请稍后重试`);
   }
 
   private assertAllowedFeishuTenant(tenantKey: string | null | undefined) {

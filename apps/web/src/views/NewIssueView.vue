@@ -32,14 +32,21 @@
       </n-card>
 
       <n-card v-show="currentStep === 3" title="投票规则" size="large" class="form-card">
-        <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
-          <n-gi span="2 720:1"><n-form-item label="投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="每人最多重投次数"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100" :disabled="!form.allowVoteChange" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
-        </n-grid>
-        <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许重新投票</n-checkbox><n-text depth="3">重投次数为 0 时，禁止修改投票。</n-text></n-space>
+        <n-space vertical :size="16">
+          <n-checkbox v-model:checked="form.votingEnabled">启用投票器</n-checkbox>
+          <n-text depth="3">关闭后，该议题仅用于讨论，不会显示投票器或产生投票结果。</n-text>
+        </n-space>
+        <template v-if="form.votingEnabled">
+          <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
+            <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+            <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+            <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
+            <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
+            <n-gi v-if="form.passRule === 'custom'" span="2"><n-form-item label="自定义通过规则"><n-input v-model:value="form.customPassRule" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" maxlength="500" show-count placeholder="例如：需到会成员三分之二同意，且预算不超过既定额度。" /></n-form-item></n-gi>
+            <n-gi span="2 720:1"><n-form-item label="每人最多重投次数"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100" :disabled="!form.allowVoteChange" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
+          </n-grid>
+          <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许重新投票</n-checkbox><n-text depth="3">不设置自动时间时，由创建者在详情页开始或结束投票；设置时间时将自动开始和结束，仍可提前手动结束。</n-text></n-space>
+        </template>
       </n-card>
 
       <n-card size="small" class="form-footer">
@@ -79,7 +86,7 @@ const commentPublishAt = ref<number | null>(null);
 const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
-const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority' });
+const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], votingEnabled: true, voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority', customPassRule: '' });
 const rules: FormRules = { title: [{ required: true, min: 3, message: '议题标题至少需要 3 个字符', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
@@ -102,10 +109,11 @@ async function submit() {
       ...form,
       title: form.title.trim(),
       labelIds: normalizeNumericIds(form.labelIds),
+      customPassRule: form.passRule === 'custom' ? form.customPassRule.trim() : null,
       commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null,
       commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null,
-      voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
-      voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
+      voteStartsAt: form.votingEnabled && voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
+      voteEndsAt: form.votingEnabled && voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
     });
     message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
   } catch (error) {
@@ -138,6 +146,13 @@ watch(() => session.viewer?.id, (viewerId) => {
   if (viewerId) void loadFormOptions();
   else formOptionsReady.value = false;
 }, { immediate: true });
+
+watch(() => form.votingEnabled, (enabled) => {
+  if (!enabled) {
+    voteStartsAt.value = null;
+    voteEndsAt.value = null;
+  }
+});
 </script>
 
 <style scoped>

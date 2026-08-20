@@ -94,16 +94,10 @@ ${redirect_uri}?code=CODE&state=STATE
 
 5. 后端校验 `state`。
 6. 后端将 `client_secret` 做 `PASSWORD_HASH` 后请求 token。Node.js 实现建议使用 bcrypt，等价于 PHP `password_hash($secret, PASSWORD_DEFAULT)` 的 bcrypt 结果。
-7. 后端 POST JSON 到 `tokenURL`：
+7. 后端以 `application/x-www-form-urlencoded` POST 到 `tokenURL`。其中 `redirect_uri` 的值本身保持 URL 编码，表单传输时会再次编码：
 
-```json
-{
-  "grant_type": "authorization_code",
-  "code": "CODE",
-  "client_id": "example",
-  "client_secret": "$2y$10$oQfDIqchgv9xv5UVUo9QNeM7fhqDJj69lZsbU3pPA9NOa0kLgohuS",
-  "redirect_uri": "https%3A%2F%2Fexample.com%2Fauth%2Fcallback"
-}
+```text
+grant_type=authorization_code&code=CODE&client_id=example&client_secret=%242y%2410%24...&redirect_uri=https%253A%252F%252Fexample.com%252Fauth%252Fcallback
 ```
 
 8. 后端使用返回的 `access_token` 请求用户信息：

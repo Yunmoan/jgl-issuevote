@@ -91,6 +91,8 @@ POST   /api/issues
 GET    /api/issues/:number
 PATCH  /api/issues/:number
 POST   /api/issues/:number/close
+POST   /api/issues/:number/start-voting
+POST   /api/issues/:number/outcome
 POST   /api/issues/:number/reopen
 POST   /api/issues/:number/archive
 POST   /api/issues/:number/subscribe
@@ -99,7 +101,7 @@ DELETE /api/issues/:number/subscribe
 
 列表查询参数：
 
-- `status=open,voting,closed`
+- `status=open`：返回开放讨论和投票中的议题；`status=voting`：只返回投票中的议题。
 - `label=财务`
 - `visibility=public|login|groups`
 - `q=关键词`
@@ -116,14 +118,18 @@ DELETE /api/issues/:number/subscribe
   "voteGroupKeys": ["council"],
   "labelIds": [1, 2],
   "commentPublishAt": "2026-08-31T12:00:00.000Z",
+  "votingEnabled": true,
   "voteStartsAt": "2026-08-20T12:00:00.000Z",
   "voteEndsAt": "2026-08-27T12:00:00.000Z",
   "voteVisibility": "counts_after_close",
   "allowVoteChange": true,
   "quorumCount": 9,
-  "passRule": "simple_majority"
+  "passRule": "simple_majority",
+  "customPassRule": null
 }
 ```
+
+未配置投票时间时，议题先处于 `open`（开放讨论），创建者可通过 `POST /api/issues/:number/start-voting` 开始投票；配置开始和结束时间后会自动转为 `voting` 并在结束时自动关闭。`POST /api/issues/:number/close` 接收 `{ "visibility": "retain" | "public" }`，用于关闭时保持现状或公开给所有访客。自定义规则结束后返回 `outcome=manual_required`，仅 `admin` 或 `auditor` 可通过 `POST /api/issues/:number/outcome` 提交 `{ "outcome": "passed" | "rejected" }`。
 
 议题详情返回应包含当前用户能力：
 
@@ -134,6 +140,8 @@ DELETE /api/issues/:number/subscribe
       "number": 12,
       "title": "是否通过 2026 年预算调整方案",
       "status": "voting",
+      "votingEnabled": true,
+      "outcome": "pending",
       "visibility": "groups",
       "labels": [],
       "commentPublishAt": "2026-08-31T12:00:00.000Z"
@@ -271,4 +279,3 @@ GET   /api/admin/issues/:number/audit
 - `VALIDATION_FAILED`
 - `OAUTH_STATE_INVALID`
 - `OAUTH_PROVIDER_ERROR`
-

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
-import type { IssueVisibility, Viewer, VoteChoice } from '../types';
+import type { IssueOutcome, IssueVisibility, Viewer, VoteChoice } from '../types';
 
 export const createIssueSchema = z.object({
   title: z.string().trim().min(3).max(200),
@@ -13,6 +13,7 @@ export const createIssueSchema = z.object({
   labelIds: z.array(z.coerce.number().int().positive()).max(20).default([]).transform(uniqueValues),
   commentPublishAt: z.string().datetime().nullable().optional(),
   commentEndsAt: z.string().datetime().nullable().optional(),
+  votingEnabled: z.boolean().default(true),
   voteStartsAt: z.string().datetime().nullable().optional(),
   voteEndsAt: z.string().datetime().nullable().optional(),
   voteVisibility: z.enum(['counts_after_vote', 'counts_after_close', 'names_after_close', 'admin_only']).default('counts_after_close'),
@@ -20,7 +21,8 @@ export const createIssueSchema = z.object({
   maxVoteChanges: z.number().int().min(0).max(100).default(1),
   maxCommentsPerUser: z.number().int().min(1).max(100).default(3),
   quorumCount: z.number().int().positive().nullable().optional(),
-  passRule: z.enum(['simple_majority', 'two_thirds', 'custom']).default('simple_majority')
+  passRule: z.enum(['simple_majority', 'two_thirds', 'custom']).default('simple_majority'),
+  customPassRule: z.string().trim().min(1).max(500).nullable().optional()
 }).superRefine((input, context) => {
   if (input.visibility === 'groups' && input.viewGroupKeys.length === 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['viewGroupKeys'], message: '指定权限组可见时，至少选择一个查看权限组' });
@@ -30,6 +32,15 @@ export const createIssueSchema = z.object({
   }
   if (input.voteStartsAt && input.voteEndsAt && input.voteStartsAt > input.voteEndsAt) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['voteEndsAt'], message: '投票结束时间不能早于开始时间' });
+  }
+  if (input.votingEnabled && Boolean(input.voteStartsAt) !== Boolean(input.voteEndsAt)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['voteStartsAt'], message: '设置自动投票时，开始时间和结束时间必须同时填写' });
+  }
+  if (!input.votingEnabled && (input.voteStartsAt || input.voteEndsAt)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['votingEnabled'], message: '未启用投票时不能设置投票时间' });
+  }
+  if (input.passRule === 'custom' && !input.customPassRule) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['customPassRule'], message: '请选择自定义规则说明' });
   }
 });
 export const updateIssueSchema = createIssueSchema;
@@ -44,16 +55,23 @@ export class IssuesService implements OnModuleInit {
 
   onModuleInit() {
     void this.archiveDueClosedIssues();
+    void this.syncVotingLifecycle();
     setInterval(() => void this.archiveDueClosedIssues(), 60 * 60 * 1000).unref();
+    setInterval(() => void this.syncVotingLifecycle(), 60 * 1000).unref();
   }
 
   async list(query: Record<string, unknown>, viewer: Viewer | null) {
+    await this.syncVotingLifecycle();
     const conditions = [`i.status <> 'draft'`];
     const params: Record<string, unknown> = {};
 
     if (query.status) {
-      conditions.push('i.status = :status');
-      params.status = query.status;
+      if (query.status === 'open') {
+        conditions.push(`i.status IN ('open', 'voting')`);
+      } else {
+        conditions.push('i.status = :status');
+        params.status = query.status;
+      }
     }
     if (query.q) {
       conditions.push('(i.title LIKE :q OR i.body_md LIKE :q)');
@@ -84,7 +102,7 @@ export class IssuesService implements OnModuleInit {
     }
 
     const rows = await this.db.rows(
-      `SELECT i.id, i.number, i.title, i.status, i.visibility, i.vote_starts_at, i.vote_ends_at,
+      `SELECT i.id, i.number, i.title, i.status, i.visibility, i.voting_enabled, i.outcome, i.vote_starts_at, i.vote_ends_at,
               i.updated_at, u.display_name AS created_by_name,
               COUNT(DISTINCT c.id) AS comment_count,
               COUNT(DISTINCT v.id) AS vote_count
@@ -104,8 +122,10 @@ export class IssuesService implements OnModuleInit {
     return rows.map((row) => ({
       number: row.number,
       title: row.title,
-      status: row.status,
-      visibility: row.visibility,
+        status: row.status,
+        visibility: row.visibility,
+        votingEnabled: Boolean(row.voting_enabled),
+        outcome: row.outcome,
       voteStartsAt: row.vote_starts_at,
       voteEndsAt: row.vote_ends_at,
       updatedAt: row.updated_at,
@@ -120,29 +140,35 @@ export class IssuesService implements OnModuleInit {
     this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
+    const status = this.initialStatus(input);
+    const outcome: IssueOutcome = input.votingEnabled ? 'pending' : 'not_applicable';
     const next = await this.db.first(`SELECT COALESCE(MAX(number), 0) + 1 AS next_number FROM issues`);
     const result = await this.db.exec(
       `INSERT INTO issues
-       (number, title, body_md, status, visibility, comment_publish_at, comment_ends_at, vote_starts_at, vote_ends_at,
-        vote_visibility, allow_vote_change, max_vote_changes, max_comments_per_user, quorum_count, pass_rule, created_by, created_at, updated_at)
+       (number, title, body_md, status, visibility, voting_enabled, comment_publish_at, comment_ends_at, vote_starts_at, vote_ends_at,
+        vote_visibility, allow_vote_change, max_vote_changes, max_comments_per_user, quorum_count, pass_rule, custom_pass_rule_json, outcome, created_by, created_at, updated_at)
        VALUES
-       (:number, :title, :bodyMd, 'open', :visibility, :commentPublishAt, :commentEndsAt, :voteStartsAt, :voteEndsAt,
-        :voteVisibility, :allowVoteChange, :maxVoteChanges, :maxCommentsPerUser, :quorumCount, :passRule, :createdBy, :now, :now)`,
+       (:number, :title, :bodyMd, :status, :visibility, :votingEnabled, :commentPublishAt, :commentEndsAt, :voteStartsAt, :voteEndsAt,
+        :voteVisibility, :allowVoteChange, :maxVoteChanges, :maxCommentsPerUser, :quorumCount, :passRule, :customPassRule, :outcome, :createdBy, :now, :now)`,
       {
         number: next.next_number,
         title: input.title,
         bodyMd: input.bodyMd,
+        status,
         visibility: input.visibility,
+        votingEnabled: input.votingEnabled,
         commentPublishAt: toSqlDate(input.commentPublishAt || null),
         commentEndsAt: toSqlDate(input.commentEndsAt || null),
-        voteStartsAt: toSqlDate(input.voteStartsAt || null),
-        voteEndsAt: toSqlDate(input.voteEndsAt || null),
+        voteStartsAt: toSqlDate(input.votingEnabled ? input.voteStartsAt || null : null),
+        voteEndsAt: toSqlDate(input.votingEnabled ? input.voteEndsAt || null : null),
         voteVisibility: input.voteVisibility,
         allowVoteChange: input.allowVoteChange,
         maxVoteChanges: input.maxVoteChanges,
         maxCommentsPerUser: input.maxCommentsPerUser,
         quorumCount: input.quorumCount || null,
         passRule: input.passRule,
+        customPassRule: input.passRule === 'custom' ? JSON.stringify({ description: input.customPassRule }) : null,
+        outcome,
         createdBy: viewer.id,
         now
       }
@@ -156,10 +182,12 @@ export class IssuesService implements OnModuleInit {
   }
 
   async getByNumber(number: string, viewer: Viewer | null) {
+    await this.syncVotingLifecycle();
     const issue = await this.db.first(
-      `SELECT i.*, u.display_name AS created_by_name
+      `SELECT i.*, u.display_name AS created_by_name, outcome_user.display_name AS outcome_confirmed_by_name
        FROM issues i
        JOIN users u ON u.id = i.created_by
+       LEFT JOIN users outcome_user ON outcome_user.id = i.outcome_confirmed_by
        WHERE i.number = :number`,
       { number }
     );
@@ -196,6 +224,7 @@ export class IssuesService implements OnModuleInit {
         bodyMd: issue.body_md,
         status: issue.status,
         visibility: issue.visibility,
+        votingEnabled: Boolean(issue.voting_enabled),
         commentPublishAt: issue.comment_publish_at,
         commentEndsAt: issue.comment_ends_at,
         voteStartsAt: issue.vote_starts_at,
@@ -206,6 +235,10 @@ export class IssuesService implements OnModuleInit {
         maxCommentsPerUser: Number(issue.max_comments_per_user),
         quorumCount: issue.quorum_count,
         passRule: issue.pass_rule,
+        customPassRule: this.customPassRule(issue.custom_pass_rule_json),
+        outcome: issue.outcome,
+        outcomeConfirmedByName: issue.outcome_confirmed_by_name,
+        outcomeConfirmedAt: issue.outcome_confirmed_at,
         createdByName: issue.created_by_name,
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
@@ -221,7 +254,9 @@ export class IssuesService implements OnModuleInit {
         commentRemaining: Math.max(Number(issue.max_comments_per_user) - commentCount, 0),
         canVote: await this.canVote(issue, viewer),
         canEdit: Boolean(viewer && (viewer.groups.includes('admin') || String(issue.created_by) === viewer.id)),
-        canModerate: Boolean(viewer?.groups.includes('admin'))
+        canModerate: Boolean(viewer?.groups.includes('admin')),
+        canStartVoting: Boolean(viewer && (viewer.groups.includes('admin') || String(issue.created_by) === viewer.id) && Boolean(issue.voting_enabled) && issue.status === 'open' && !issue.vote_starts_at && !issue.vote_ends_at),
+        canConfirmOutcome: Boolean(viewer && ['admin', 'auditor'].some((group) => viewer.groups.includes(group)) && issue.status === 'closed' && issue.outcome === 'manual_required')
       },
       voteSummary: summary,
       myVote: myVote ? { choice: myVote.choice, castAt: myVote.cast_at, changeCount: Number(myVote.change_count) } : null
@@ -407,16 +442,37 @@ export class IssuesService implements OnModuleInit {
     return this.getByNumber(number, viewer);
   }
 
-  async close(number: string, viewer: Viewer) {
+  async close(number: string, closeVisibility: 'retain' | 'public', viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     this.requireIssueManager(detail, viewer);
     if (detail.issue.status !== 'open' && detail.issue.status !== 'voting') throw new ForbiddenException('只有开放中的议题可以关闭');
+    await this.closeIssue(detail.issue, viewer, 'manual', closeVisibility);
+    return this.getByNumber(number, viewer);
+  }
+
+  async startVoting(number: string, viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    this.requireIssueManager(detail, viewer);
+    if (!detail.issue.votingEnabled) throw new ForbiddenException('本议题未启用投票');
+    if (detail.issue.status !== 'open') throw new ForbiddenException('只有开放讨论中的议题可以开始投票');
+    if (detail.issue.voteStartsAt || detail.issue.voteEndsAt) throw new ForbiddenException('已设置自动投票时间的议题会按计划开始');
+    await this.db.exec(`UPDATE issues SET status = 'voting', updated_at = :now WHERE id = :issueId`, { now: nowSql(), issueId: detail.issue.id });
+    await this.audit(viewer.id, 'issue.vote_start', 'issue', detail.issue.id, { number, mode: 'manual' });
+    return this.getByNumber(number, viewer);
+  }
+
+  async confirmOutcome(number: string, outcome: 'passed' | 'rejected', viewer: Viewer) {
+    if (!viewer.groups.some((group) => ['admin', 'auditor'].includes(group))) throw new ForbiddenException('需要管理员或审计员权限');
+    const detail = await this.getByNumber(number, viewer);
+    if (detail.issue.status !== 'closed' || detail.issue.outcome !== 'manual_required') {
+      throw new ForbiddenException('只有等待人工确认结果的已关闭议题可以确认');
+    }
     const now = nowSql();
     await this.db.exec(
-      `UPDATE issues SET status = 'closed', closed_by = :viewerId, closed_at = :now, updated_at = :now WHERE id = :issueId`,
-      { viewerId: viewer.id, now, issueId: detail.issue.id }
+      `UPDATE issues SET outcome = :outcome, outcome_confirmed_by = :viewerId, outcome_confirmed_at = :now, updated_at = :now WHERE id = :issueId`,
+      { outcome, viewerId: viewer.id, now, issueId: detail.issue.id }
     );
-    await this.audit(viewer.id, 'issue.close', 'issue', detail.issue.id, { number });
+    await this.audit(viewer.id, 'issue.outcome.confirm', 'issue', detail.issue.id, { number, outcome });
     return this.getByNumber(number, viewer);
   }
 
@@ -426,8 +482,9 @@ export class IssuesService implements OnModuleInit {
     if (detail.issue.status !== 'closed') throw new ForbiddenException('只有已关闭的议题可以重新开启');
     const now = nowSql();
     await this.db.exec(
-      `UPDATE issues SET status = 'open', closed_by = NULL, closed_at = NULL, updated_at = :now WHERE id = :issueId`,
-      { now, issueId: detail.issue.id }
+      `UPDATE issues SET status = 'open', outcome = :outcome, outcome_confirmed_by = NULL, outcome_confirmed_at = NULL,
+       closed_by = NULL, closed_at = NULL, updated_at = :now WHERE id = :issueId`,
+      { now, issueId: detail.issue.id, outcome: detail.issue.votingEnabled ? 'pending' : 'not_applicable' }
     );
     await this.audit(viewer.id, 'issue.reopen', 'issue', detail.issue.id, { number });
     return this.getByNumber(number, viewer);
@@ -438,13 +495,18 @@ export class IssuesService implements OnModuleInit {
     if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
+    const status = this.updatedStatus(detail.issue.status, input);
+    const outcome = !input.votingEnabled ? 'not_applicable' : detail.issue.status === 'closed' && input.passRule === 'custom' ? 'manual_required' : detail.issue.outcome;
     await this.db.exec(
       `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
-       comment_ends_at = :commentEndsAt, vote_starts_at = :voteStartsAt, vote_ends_at = :voteEndsAt, vote_visibility = :voteVisibility,
+       comment_ends_at = :commentEndsAt, voting_enabled = :votingEnabled, vote_starts_at = :voteStartsAt, vote_ends_at = :voteEndsAt, vote_visibility = :voteVisibility,
        allow_vote_change = :allowVoteChange, max_vote_changes = :maxVoteChanges, max_comments_per_user = :maxCommentsPerUser,
-       quorum_count = :quorumCount, pass_rule = :passRule, content_edited_at = :now, updated_at = :now
+       quorum_count = :quorumCount, pass_rule = :passRule, custom_pass_rule_json = :customPassRule, status = :status, outcome = :outcome,
+       outcome_confirmed_by = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_by ELSE NULL END,
+       outcome_confirmed_at = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_at ELSE NULL END,
+       content_edited_at = :now, updated_at = :now
        WHERE id = :issueId`,
-      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), voteStartsAt: toSqlDate(input.voteStartsAt || null), voteEndsAt: toSqlDate(input.voteEndsAt || null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, now, issueId: detail.issue.id }
+      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), votingEnabled: input.votingEnabled, voteStartsAt: toSqlDate(input.votingEnabled ? input.voteStartsAt || null : null), voteEndsAt: toSqlDate(input.votingEnabled ? input.voteEndsAt || null : null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, customPassRule: input.passRule === 'custom' ? JSON.stringify({ description: input.customPassRule }) : null, status, outcome, now, issueId: detail.issue.id }
     );
     await this.replaceLabels(detail.issue.id, input.labelIds);
     await this.replaceIssueGroups('issue_view_groups', detail.issue.id, input.viewGroupKeys);
@@ -460,6 +522,83 @@ export class IssuesService implements OnModuleInit {
     await this.db.exec(`UPDATE issues SET status = 'archived', updated_at = :now WHERE id = :issueId`, { now: nowSql(), issueId: detail.issue.id });
     await this.audit(viewer.id, 'issue.archive', 'issue', detail.issue.id, { number, mode: 'manual' });
     return this.getByNumber(number, viewer);
+  }
+
+  private initialStatus(input: z.infer<typeof createIssueSchema>) {
+    if (!input.votingEnabled || !input.voteStartsAt || !input.voteEndsAt) return 'open';
+    const now = Date.now();
+    const startsAt = new Date(input.voteStartsAt).getTime();
+    const endsAt = new Date(input.voteEndsAt).getTime();
+    return startsAt <= now && endsAt > now ? 'voting' : 'open';
+  }
+
+  private updatedStatus(currentStatus: string, input: z.infer<typeof updateIssueSchema>) {
+    if (!input.votingEnabled) return currentStatus === 'voting' ? 'open' : currentStatus;
+    if (currentStatus !== 'open' || !input.voteStartsAt || !input.voteEndsAt) return currentStatus;
+    const now = Date.now();
+    return new Date(input.voteStartsAt).getTime() <= now && new Date(input.voteEndsAt).getTime() > now ? 'voting' : 'open';
+  }
+
+  private async closeIssue(issue: { id: string; number?: number; votingEnabled: boolean; passRule: string }, viewer: Viewer | null, mode: 'manual' | 'scheduled', closeVisibility: 'retain' | 'public') {
+    const now = nowSql();
+    const outcome = await this.outcomeForIssue(issue.id, issue.votingEnabled, issue.passRule);
+    await this.db.exec(
+      `UPDATE issues SET status = 'closed', visibility = CASE WHEN :closeVisibility = 'public' THEN 'public' ELSE visibility END,
+       closed_by = :viewerId, closed_at = :now, outcome = :outcome, outcome_confirmed_by = NULL,
+       outcome_confirmed_at = NULL, updated_at = :now WHERE id = :issueId`,
+      { closeVisibility, viewerId: viewer?.id || null, now, outcome, issueId: issue.id }
+    );
+    if (closeVisibility === 'public') await this.replaceIssueGroups('issue_view_groups', issue.id, []);
+    await this.audit(viewer?.id || null, mode === 'manual' ? 'issue.vote_end' : 'issue.vote_end_auto', 'issue', issue.id, {
+      number: issue.number,
+      outcome,
+      visibility: closeVisibility
+    });
+  }
+
+  private async outcomeForIssue(issueId: string | number, votingEnabled: boolean, passRule: string): Promise<IssueOutcome> {
+    if (!votingEnabled) return 'not_applicable';
+    if (passRule === 'custom') return 'manual_required';
+    const rows = await this.db.rows(`SELECT choice, COUNT(*) AS count FROM issue_votes WHERE issue_id = :issueId GROUP BY choice`, { issueId });
+    const counts = { agree: 0, disagree: 0 };
+    for (const row of rows) {
+      if (row.choice === 'agree' || row.choice === 'disagree') counts[row.choice] = Number(row.count);
+    }
+    const validVotes = counts.agree + counts.disagree;
+    if (validVotes === 0) return 'rejected';
+    const passed = passRule === 'two_thirds' ? counts.agree * 3 >= validVotes * 2 : counts.agree > counts.disagree;
+    return passed ? 'passed' : 'rejected';
+  }
+
+  private async syncVotingLifecycle() {
+    try {
+      const now = nowSql();
+      await this.db.exec(
+        `UPDATE issues
+         SET status = 'voting', updated_at = :now
+         WHERE status = 'open'
+           AND voting_enabled = TRUE
+           AND vote_starts_at IS NOT NULL
+           AND vote_ends_at IS NOT NULL
+           AND vote_starts_at <= UTC_TIMESTAMP()
+           AND vote_ends_at > UTC_TIMESTAMP()`,
+        { now }
+      );
+      const dueIssues = await this.db.rows(
+        `SELECT id, number, voting_enabled, pass_rule
+         FROM issues
+         WHERE status IN ('open', 'voting')
+           AND voting_enabled = TRUE
+           AND vote_starts_at IS NOT NULL
+           AND vote_ends_at IS NOT NULL
+           AND vote_ends_at <= UTC_TIMESTAMP()`
+      );
+      for (const issue of dueIssues) {
+        await this.closeIssue({ id: String(issue.id), number: Number(issue.number), votingEnabled: Boolean(issue.voting_enabled), passRule: issue.pass_rule }, null, 'scheduled', 'retain');
+      }
+    } catch {
+      // Automatic voting transitions are retried on the next request and once per minute.
+    }
   }
 
   private async archiveDueClosedIssues() {
@@ -606,10 +745,7 @@ export class IssuesService implements OnModuleInit {
   private async canVote(issue: any, viewer: Viewer | null) {
     if (!viewer) return false;
     if (!(await this.canViewIssue(issue, viewer))) return false;
-    if (issue.status === 'closed' || issue.status === 'archived') return false;
-    const now = Date.now();
-    if (issue.vote_starts_at && new Date(issue.vote_starts_at).getTime() > now) return false;
-    if (issue.vote_ends_at && new Date(issue.vote_ends_at).getTime() < now) return false;
+    if (!Boolean(issue.voting_enabled) || issue.status !== 'voting') return false;
     const voteGroups = await this.groupsForIssue('issue_vote_groups', issue.id);
     if (voteGroups.length === 0) return true;
     return voteGroups.some((group) => viewer.groups.includes(group.groupKey));
@@ -693,6 +829,16 @@ export class IssuesService implements OnModuleInit {
     return new Set(rows.map((row) => String(row.value)));
   }
 
+  private customPassRule(value: string | null) {
+    if (!value) return null;
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed?.description === 'string' ? parsed.description : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async replaceIssueGroups(table: 'issue_view_groups' | 'issue_vote_groups', issueId: string | number, groupKeys: string[]) {
     await this.db.exec(`DELETE FROM ${table} WHERE issue_id = :issueId`, { issueId });
     for (const groupKey of groupKeys) {
@@ -720,7 +866,7 @@ export class IssuesService implements OnModuleInit {
     }
   }
 
-  private async audit(actorId: string, action: string, targetType: string, targetId: string, metadata: unknown) {
+  private async audit(actorId: string | null, action: string, targetType: string, targetId: string, metadata: unknown) {
     await this.db.exec(
       `INSERT INTO audit_logs (actor_id, action, target_type, target_id, metadata_json, created_at)
        VALUES (:actorId, :action, :targetType, :targetId, :metadata, :now)`,
