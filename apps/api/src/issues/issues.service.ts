@@ -1,16 +1,16 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
 import type { IssueVisibility, Viewer, VoteChoice } from '../types';
 
 export const createIssueSchema = z.object({
-  title: z.string().min(3).max(200),
-  bodyMd: z.string().min(1),
+  title: z.string().trim().min(3).max(200),
+  bodyMd: z.string().trim().min(1).max(1024 * 1024),
   visibility: z.enum(['public', 'login', 'groups']).default('login'),
-  viewGroupKeys: z.array(z.string()).default([]),
-  voteGroupKeys: z.array(z.string()).default([]),
-  labelIds: z.array(z.number()).default([]),
+  viewGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),
+  voteGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),
+  labelIds: z.array(z.coerce.number().int().positive()).max(20).default([]).transform(uniqueValues),
   commentPublishAt: z.string().datetime().nullable().optional(),
   commentEndsAt: z.string().datetime().nullable().optional(),
   voteStartsAt: z.string().datetime().nullable().optional(),
@@ -21,8 +21,22 @@ export const createIssueSchema = z.object({
   maxCommentsPerUser: z.number().int().min(1).max(100).default(3),
   quorumCount: z.number().int().positive().nullable().optional(),
   passRule: z.enum(['simple_majority', 'two_thirds', 'custom']).default('simple_majority')
+}).superRefine((input, context) => {
+  if (input.visibility === 'groups' && input.viewGroupKeys.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['viewGroupKeys'], message: '指定权限组可见时，至少选择一个查看权限组' });
+  }
+  if (input.commentPublishAt && input.commentEndsAt && input.commentPublishAt > input.commentEndsAt) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['commentEndsAt'], message: '意见截止时间不能早于公布时间' });
+  }
+  if (input.voteStartsAt && input.voteEndsAt && input.voteStartsAt > input.voteEndsAt) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['voteEndsAt'], message: '投票结束时间不能早于开始时间' });
+  }
 });
 export const updateIssueSchema = createIssueSchema;
+
+function uniqueValues<T>(values: T[]) {
+  return [...new Set(values)];
+}
 
 @Injectable()
 export class IssuesService implements OnModuleInit {
@@ -104,6 +118,7 @@ export class IssuesService implements OnModuleInit {
 
   async create(input: z.infer<typeof createIssueSchema>, viewer: Viewer) {
     this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
+    await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
     const next = await this.db.first(`SELECT COALESCE(MAX(number), 0) + 1 AS next_number FROM issues`);
     const result = await this.db.exec(
@@ -421,6 +436,7 @@ export class IssuesService implements OnModuleInit {
   async update(number: string, input: z.infer<typeof updateIssueSchema>, viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
+    await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
     await this.db.exec(
       `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
@@ -490,7 +506,7 @@ export class IssuesService implements OnModuleInit {
       await this.audit(viewer.id, 'label.create', 'label', String(result.insertId), input);
       return { id: Number(result.insertId), ...input };
     } catch (error: any) {
-      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('标签名称已存在');
+      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('分类名称已存在');
       throw error;
     }
   }
@@ -498,7 +514,7 @@ export class IssuesService implements OnModuleInit {
   async updateLabel(labelId: number, input: { name: string; color: string; description?: string | null }, viewer: Viewer) {
     this.requireAdmin(viewer);
     const existing = await this.db.first(`SELECT id FROM labels WHERE id = :labelId`, { labelId });
-    if (!existing) throw new NotFoundException('标签不存在');
+    if (!existing) throw new NotFoundException('分类不存在');
     try {
       await this.db.exec(
         `UPDATE labels SET name = :name, color = :color, description = :description WHERE id = :labelId`,
@@ -507,7 +523,7 @@ export class IssuesService implements OnModuleInit {
       await this.audit(viewer.id, 'label.update', 'label', String(labelId), input);
       return { ok: true };
     } catch (error: any) {
-      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('标签名称已存在');
+      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('分类名称已存在');
       throw error;
     }
   }
@@ -515,9 +531,9 @@ export class IssuesService implements OnModuleInit {
   async deleteLabel(labelId: number, viewer: Viewer) {
     this.requireAdmin(viewer);
     const usage = await this.db.first(`SELECT COUNT(*) AS count FROM issue_labels WHERE label_id = :labelId`, { labelId });
-    if (Number(usage?.count || 0) > 0) throw new ConflictException('该标签已被议题使用，无法删除');
+    if (Number(usage?.count || 0) > 0) throw new ConflictException('该分类已被议题使用，无法删除');
     const result = await this.db.exec(`DELETE FROM labels WHERE id = :labelId`, { labelId });
-    if (result.affectedRows === 0) throw new NotFoundException('标签不存在');
+    if (result.affectedRows === 0) throw new NotFoundException('分类不存在');
     await this.audit(viewer.id, 'label.delete', 'label', String(labelId), {});
     return { ok: true };
   }
@@ -657,6 +673,24 @@ export class IssuesService implements OnModuleInit {
         labelId
       });
     }
+  }
+
+  private async ensureKnownSelections(labelIds: number[], viewGroupKeys: string[], voteGroupKeys: string[]) {
+    const groupKeys = uniqueValues([...viewGroupKeys, ...voteGroupKeys]);
+    const [knownLabels, knownGroups] = await Promise.all([
+      this.findKnownValues('labels', 'id', labelIds),
+      this.findKnownValues('permission_groups', 'group_key', groupKeys)
+    ]);
+    if (knownLabels.size !== labelIds.length) throw new BadRequestException('选择的分类不存在或已被删除，请刷新页面后重试');
+    if (knownGroups.size !== groupKeys.length) throw new BadRequestException('选择的权限组不存在或已被删除，请刷新页面后重试');
+  }
+
+  private async findKnownValues(table: 'labels' | 'permission_groups', column: 'id' | 'group_key', values: Array<number | string>) {
+    if (values.length === 0) return new Set<string>();
+    const parameters = Object.fromEntries(values.map((value, index) => [`value${index}`, value]));
+    const placeholders = values.map((_, index) => `:value${index}`).join(', ');
+    const rows = await this.db.rows(`SELECT ${column} AS value FROM ${table} WHERE ${column} IN (${placeholders})`, parameters);
+    return new Set(rows.map((row) => String(row.value)));
   }
 
   private async replaceIssueGroups(table: 'issue_view_groups' | 'issue_vote_groups', issueId: string | number, groupKeys: string[]) {

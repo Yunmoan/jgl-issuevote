@@ -223,4 +223,4 @@ INSERT IGNORE INTO labels (name, color, description, created_at) VALUES
 ('紧急', '#d03050', '需要优先处理的议题', NOW());
 
 INSERT IGNORE INTO system_settings (setting_key, setting_value, updated_at) VALUES
-('site_name', '"冀高联议事"', NOW());
+('site_name', '"冀高联事项"', NOW());

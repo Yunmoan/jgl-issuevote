@@ -12,14 +12,18 @@
       <n-card v-show="currentStep === 1" title="基本信息" size="large">
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>
         <n-form-item label="议题说明" path="bodyMd"><ContentEditor v-model="form.bodyMd" :min-rows="9" placeholder="说明背景、可选方案、执行影响或需要讨论的重点。支持 Markdown、图片与基本富文本。" /></n-form-item>
-        <n-form-item label="标签"><n-select v-model:value="form.labelIds" multiple :options="labelOptions" placeholder="选择议题分类" /></n-form-item>
+        <n-form-item label="分类"><n-select v-model:value="form.labelIds" multiple :options="labelOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="选择议题分类" /></n-form-item>
       </n-card>
+
+      <n-alert v-if="optionsError" type="error" :bordered="false" title="无法读取创建议题所需的配置">
+        <n-space align="center" :size="8"><span>{{ optionsError }}</span><n-button text type="primary" :loading="loadingOptions" @click="loadFormOptions">重试</n-button></n-space>
+      </n-alert>
 
       <n-card v-show="currentStep === 2" title="参与范围" size="large" class="form-card">
         <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
           <n-gi span="2 720:1"><n-form-item label="可见范围"><n-select v-model:value="form.visibility" :options="visibilityOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" :disabled="form.visibility !== 'groups'" placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" :loading="loadingOptions" :disabled="form.visibility !== 'groups' || !formOptionsReady" placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="form.maxCommentsPerUser" :min="1" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
@@ -51,27 +55,32 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline, ArrowBackOutline, ArrowForwardOutline } from '@vicons/ionicons5';
 import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
+import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
 const message = useMessage();
+const session = useSessionStore();
 const formRef = ref<FormInst | null>(null);
 const submitting = ref(false);
 const currentStep = ref(1);
 const groupOptions = ref<Array<{ label: string; value: string }>>([]);
 const labelOptions = ref<Array<{ label: string; value: number }>>([]);
+const loadingOptions = ref(false);
+const formOptionsReady = ref(false);
+const optionsError = ref('');
 const commentPublishAt = ref<number | null>(null);
 const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
 const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority' });
-const rules: FormRules = { title: [{ required: true, message: '请填写议题标题', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
+const rules: FormRules = { title: [{ required: true, min: 3, message: '议题标题至少需要 3 个字符', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
 const passRuleOptions = [{ label: '简单多数通过', value: 'simple_majority' }, { label: '三分之二多数通过', value: 'two_thirds' }, { label: '自定义规则', value: 'custom' }];
@@ -83,24 +92,52 @@ async function nextStep() {
 
 async function submit() {
   await formRef.value?.validate();
+  if (!formOptionsReady.value) {
+    message.error('创建配置尚未准备完成，请稍后重试');
+    return;
+  }
   submitting.value = true;
   try {
-    const detail = await apiPost<any>('/issues', { ...form, commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null, commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null, voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null, voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null });
+    const detail = await apiPost<any>('/issues', {
+      ...form,
+      title: form.title.trim(),
+      labelIds: normalizeNumericIds(form.labelIds),
+      commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null,
+      commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null,
+      voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
+      voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
+    });
     message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
   } catch (error) {
     message.error(error instanceof Error ? `发布失败：${error.message}` : '发布失败，请稍后重试');
   } finally { submitting.value = false; }
 }
-onMounted(async () => {
+async function loadFormOptions() {
+  if (!session.viewer || loadingOptions.value) return;
+  loadingOptions.value = true;
+  optionsError.value = '';
   try {
     const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups' }>('/site-config')]);
     groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
-    labelOptions.value = labels.map((label) => ({ label: label.name, value: label.id }));
+    labelOptions.value = labels.map((label) => ({ label: label.name, value: Number(label.id) }));
     form.visibility = config.defaultIssueVisibility;
-  } catch {
-    message.error('无法读取创建议题所需的权限配置，请确认已登录。');
+    formOptionsReady.value = true;
+  } catch (error) {
+    formOptionsReady.value = false;
+    optionsError.value = error instanceof Error ? error.message : '请确认登录状态和网络连接。';
+  } finally {
+    loadingOptions.value = false;
   }
-});
+}
+
+function normalizeNumericIds(ids: Array<number | string>) {
+  return [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
+}
+
+watch(() => session.viewer?.id, (viewerId) => {
+  if (viewerId) void loadFormOptions();
+  else formOptionsReady.value = false;
+}, { immediate: true });
 </script>
 
 <style scoped>

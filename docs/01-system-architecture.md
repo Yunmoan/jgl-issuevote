@@ -30,7 +30,7 @@ Backend API (NestJS)
 - `AuthModule`：飞书免登、NatayarkID OAuth2、账号绑定、Session 签发、退出登录。
 - `UserModule`：用户资料、用户状态、身份源、用户组归属。
 - `PermissionModule`：权限组、系统角色、议题可见性和投票资格判断。
-- `IssueModule`：议题 CRUD、标签、状态流转、附件、订阅。
+- `IssueModule`：议题 CRUD、分类、状态流转、附件、订阅。
 - `CommentModule`：评论创建、编辑、删除、延时公开。
 - `VoteModule`：投票、改票规则、计票、结果快照。
 - `AdminModule`：用户管理、权限组管理、议题管理、系统配置。
@@ -39,7 +39,7 @@ Backend API (NestJS)
 
 ## 前端路由
 
-- `/`：议题列表，支持状态、标签、可见范围、关键词筛选。
+- `/`：议题列表，支持状态、分类、可见范围、关键词筛选。
 - `/issues/:number`：议题详情、评论、投票面板、结果。
 - `/issues/new`：创建议题，需要创建权限。
 - `/me`：个人资料、身份绑定、自己的投票和评论。
@@ -101,6 +101,6 @@ docker-compose.yml
 
 - 安全：服务端校验所有权限；登录态使用 HttpOnly Cookie；CSRF 按 SameSite 或 CSRF Token 处理。
 - 审计：管理员操作、投票、改票、议题关闭必须可追溯。
-- 性能：议题列表分页；标签和状态建立索引；数据库按 MariaDB / MySQL 5.7 公共能力设计，不依赖 MySQL 8 专属能力；计票可先实时聚合，必要时加结果快照。
+- 性能：议题列表分页；分类和状态建立索引；数据库按 MariaDB / MySQL 5.7 公共能力设计，不依赖 MySQL 8 专属能力；计票可先实时聚合，必要时加结果快照。
 - 可维护：配置项进数据库和环境变量，不把组织 ID、Provider 端点写死。
 - 移动端：飞书 WebView、手机浏览器都应可用；PC 端使用更高信息密度。

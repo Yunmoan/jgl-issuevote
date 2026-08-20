@@ -36,9 +36,9 @@
                 </div>
               </Transition>
             </n-layout-content>
-            <n-layout-footer bordered class="site-footer"><div>{{ footerText }}</div></n-layout-footer>
+            <n-layout-footer bordered class="site-footer"><div>{{ footerText }} / Developed by 云默安 <a href="//www.zyghit.cn" target="_blank">@ZGIT</a></div> 这是一个开源软件： <a href="https://github.com/Yunmoan/jgl-issuevote" target="_blank">Github仓库</a> · 欢迎提交代码或反馈意见 </n-layout-footer>
           </n-layout>
-          <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="watermarkContent" :font-size="16" :line-height="16" :rotate="-15" :width="500" :height="250" :x-offset="12" :y-offset="60" />
+          <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="watermarkContent" :font-size="16" :line-height="16" :rotate="-15" :width="800" :height="500" :x-offset="12" :y-offset="60" />
           <n-drawer v-model:show="showMobileNav" placement="right" :width="280">
             <n-drawer-content :title="siteName" closable body-content-style="padding: 8px"><n-menu :value="activeKey" :options="menuOptions" @update:value="navigate" /></n-drawer-content>
           </n-drawer>
@@ -63,8 +63,8 @@ type WatermarkMode = 'off' | 'global' | 'issue';
 const session = useSessionStore();
 const route = useRoute();
 const router = useRouter();
-const siteName = ref('冀高联议事');
-const footerText = ref(`版权所有 © ${new Date().getFullYear()} 冀高联议事`);
+const siteName = ref('冀高联事项');
+const footerText = ref(`版权所有 © ${new Date().getFullYear()} 冀高联事项`);
 const watermarkMode = ref<WatermarkMode>('off');
 const showMobileNav = ref(false);
 const routeLoading = ref(false);

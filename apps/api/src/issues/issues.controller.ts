@@ -57,7 +57,7 @@ export class IssuesController {
   @Post('issues')
   async create(@Body() body: unknown, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
-    const input = createIssueSchema.parse(body);
+    const input = parseIssueInput(createIssueSchema, body);
     return { data: await this.issues.create(input, viewer) };
   }
 
@@ -70,7 +70,7 @@ export class IssuesController {
   @Put('issues/:number')
   async update(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
-    return { data: await this.issues.update(number, updateIssueSchema.parse(body), viewer) };
+    return { data: await this.issues.update(number, parseIssueInput(updateIssueSchema, body), viewer) };
   }
 
   @Post('issues/:number/close')
@@ -159,4 +159,13 @@ function isValidImage(file: Express.Multer.File) {
   if (file.mimetype === 'image/png') return buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   if (file.mimetype === 'image/gif') return buffer.length >= 6 && (buffer.subarray(0, 6).toString() === 'GIF87a' || buffer.subarray(0, 6).toString() === 'GIF89a');
   return buffer.length >= 12 && buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP';
+}
+
+function parseIssueInput(schema: z.ZodTypeAny, body: unknown) {
+  const result = schema.safeParse(body);
+  if (result.success) return result.data;
+  const message = result.error.issues
+    .map((issue) => `${issue.path.length ? issue.path.join('.') : '请求'}：${issue.message}`)
+    .join('；');
+  throw new BadRequestException(`议题内容不符合要求：${message}`);
 }

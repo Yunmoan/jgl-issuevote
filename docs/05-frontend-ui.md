@@ -2,7 +2,7 @@
 
 ## 设计方向
 
-使用 Naive UI，但主题明确偏蓝。整体应像组织内部议事系统，而不是营销页或生成式模板页。界面重点是读议题、看状态、投票、写意见、管理权限。
+使用 Naive UI，但主题明确偏蓝。整体应像组织内部事项系统，而不是营销页或生成式模板页。界面重点是读议题、看状态、投票、写意见、管理权限。
 
 ## Naive UI 主题
 
@@ -28,9 +28,9 @@ export const themeOverrides = {
 ### PC 布局
 
 - 顶部栏：系统名、搜索、登录用户、管理入口。
-- 左侧筛选区：状态、标签、可见范围、我的订阅。
+- 左侧筛选区：状态、分类、可见范围、我的订阅。
 - 主区域：议题列表或议题详情。
-- 议题详情右侧栏：状态、标签、投票时间、可见组、投票组、订阅。
+- 议题详情右侧栏：状态、分类、投票时间、可见组、投票组、订阅。
 
 ### 移动端布局
 
@@ -47,7 +47,7 @@ export const themeOverrides = {
 
 - `NInput` 搜索。
 - `NSelect` 状态筛选。
-- `NTag` 标签。
+- `NTag` 分类。
 - `NDataTable` 用于 PC 管理视图。
 - 普通用户列表用紧凑的自定义列表行，避免卡片堆叠。
 
@@ -55,7 +55,7 @@ export const themeOverrides = {
 
 - 标题和编号。
 - 状态。
-- 标签。
+- 分类。
 - 可见性。
 - 评论数、投票数。
 - 更新时间。
@@ -68,7 +68,7 @@ export const themeOverrides = {
 - 正文区：Markdown 渲染。
 - 投票面板：三选一，显示投票窗口和我的投票。
 - 评论区：按时间线排列。
-- 侧栏/折叠信息：标签、权限、创建者、时间、订阅。
+- 侧栏/折叠信息：分类、权限、创建者、时间、订阅。
 
 投票按钮建议使用 `NRadioGroup` 或三枚等宽按钮：
 
@@ -92,7 +92,7 @@ export const themeOverrides = {
 - 用户
 - 权限组
 - 议题
-- 标签
+- 分类
 - 系统设置
 - 审计日志
 
@@ -103,7 +103,7 @@ export const themeOverrides = {
 - 表单校验统一用 Naive UI `rules`。
 - 时间选择统一用 `NDatePicker`，提交 UTC ISO 字符串。
 - 权限组选择使用 `NSelect multiple`，显示组名称，提交 `groupKey`。
-- 标签选择使用 `NSelect multiple` 或自定义标签选择器。
+- 分类选择使用 `NSelect multiple` 或自定义分类选择器。
 - Markdown 编辑 MVP 可以用普通 textarea + preview；后续可接入成熟 Markdown 编辑器。
 
 ## 响应式断点

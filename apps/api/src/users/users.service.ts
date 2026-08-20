@@ -149,7 +149,7 @@ export class UsersService {
        WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, safeJson(row.setting_value)]));
-    const siteName = typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联议事';
+    const siteName = typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联事项';
     return {
       siteName,
       siteDescription: typeof values.site_description === 'string' ? values.site_description : '',

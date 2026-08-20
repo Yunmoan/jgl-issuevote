@@ -18,11 +18,11 @@
 5. [前端 UI 与交互](./05-frontend-ui.md)
 6. [管理后台与运营能力](./06-admin-and-operations.md)
 7. [多 agent 协作拆分](./07-agent-work-breakdown.md)
-8. [Linux 部署说明](./08-linux-deployment.md)
+8. [Linux 非 Docker 部署说明](./08-linux-deployment.md)
 
 ## 关键产品原则
 
-- 议题像 GitHub Issues：列表、标签、状态、评论、订阅、历史记录都要清晰。
+- 议题像 GitHub Issues：列表、分类、状态、评论、订阅、历史记录都要清晰。
 - 投票像理事会事务：可追溯、可审计、可导出，不能只做一个简单按钮。
 - 身份像组织系统：飞书和 NatayarkID 可以任选启用，也可以要求绑定后查看数据。
 - UI 像内部工作台：克制、清楚、移动端可用，使用 Naive UI 的组件语言和蓝色主题，不做营销页。

@@ -7,7 +7,7 @@
 - 所有 `created_at`、`updated_at`、`linked_at` 等时间字段由后端应用写入，不依赖数据库自动更新时间。
 - JSON 结构以 `LONGTEXT` 保存，后端负责序列化、反序列化和 schema 校验；这样可以避开 MariaDB 与 MySQL 原生 JSON 行为差异。
 - 字符集默认写 `utf8mb4`，用于兼容中文、emoji 和特殊字符。
-- 搜索 MVP 使用标题 `LIKE`、标签和状态筛选；后续如升级数据库或接入搜索服务，再补全文搜索。
+- 搜索 MVP 使用标题 `LIKE`、分类和状态筛选；后续如升级数据库或接入搜索服务，再补全文搜索。
 
 ## 核心实体
 
@@ -16,7 +16,7 @@
 - 权限组：`permission_groups`
 - 用户组关系：`user_group_memberships`
 - 议题：`issues`
-- 标签：`labels`
+- 分类：`labels`
 - 评论：`issue_comments`
 - 投票：`issue_votes`
 - 投票事件：`issue_vote_events`
@@ -270,5 +270,5 @@ MVP 之后可以增加：
 
 - `attachments`：议题和评论附件。
 - `notifications`：站内通知。
-- `issue_timeline_events`：把评论、状态变化、标签变化合并为 GitHub 风格时间线。
+- `issue_timeline_events`：把评论、状态变化、分类变化合并为 GitHub 风格时间线。
 - `issue_result_snapshots`：关闭议题时冻结统计结果，防止后续用户组变化影响历史解释。
