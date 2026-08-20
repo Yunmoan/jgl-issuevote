@@ -97,10 +97,16 @@ ${redirect_uri}?code=CODE&state=STATE
 
 5. 后端校验 `state`。
 6. 后端将 `client_secret` 做 `PASSWORD_HASH` 后请求 token。Natayark 要求 PHP bcrypt 标识 `$2y$10$...`；Node.js 的 bcryptjs 默认生成 `$2a$`，因此必须只替换前缀为 `$2y$` 后再提交。
-7. 后端以 `application/x-www-form-urlencoded` POST 到 `tokenURL`。其中 `redirect_uri` 的值本身保持 URL 编码，表单传输时会再次编码：
+7. 后端以 `application/json` POST 到 `tokenURL`。其中 `redirect_uri` 的 JSON 字符串值保持一次 URL 编码：
 
-```text
-grant_type=authorization_code&code=CODE&client_id=example&client_secret=%242y%2410%24...&redirect_uri=https%253A%252F%252Fexample.com%252Fauth%252Fcallback
+```json
+{
+  "grant_type": "authorization_code",
+  "code": "CODE",
+  "client_id": "example",
+  "client_secret": "$2y$10$...",
+  "redirect_uri": "https%3A%2F%2Fexample.com%2Fauth%2Fcallback"
+}
 ```
 
 8. 后端使用返回的 `access_token` 请求用户信息：
