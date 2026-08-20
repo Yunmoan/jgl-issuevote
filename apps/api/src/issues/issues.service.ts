@@ -297,10 +297,10 @@ export class IssuesService implements OnModuleInit {
       { issueId: detail.issue.id, voterId: viewer.id }
     );
     if (existing && !detail.issue.allowVoteChange) {
-      throw new ForbiddenException('该议题不允许改票');
+      throw new ForbiddenException('本议题禁止修改投票');
     }
     if (existing && Number(existing.change_count) >= detail.issue.maxVoteChanges) {
-      throw new ForbiddenException(`该议题最多允许修改投票 ${detail.issue.maxVoteChanges} 次`);
+      throw new ForbiddenException(`该议题最多允许重投 ${detail.issue.maxVoteChanges} 次`);
     }
     const now = nowSql();
     if (existing) {
@@ -309,7 +309,7 @@ export class IssuesService implements OnModuleInit {
          WHERE issue_id = :issueId AND voter_id = :voterId AND change_count < :maxVoteChanges`,
         { issueId: detail.issue.id, voterId: viewer.id, choice, now, maxVoteChanges: detail.issue.maxVoteChanges }
       );
-      if (result.affectedRows === 0) throw new ConflictException('投票修改次数已达到上限，请刷新后重试');
+      if (result.affectedRows === 0) throw new ConflictException('重投次数已达到上限，请刷新后重试');
     } else {
       await this.db.exec(
         `INSERT INTO issue_votes (issue_id, voter_id, choice, cast_at, updated_at)

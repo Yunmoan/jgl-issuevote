@@ -33,9 +33,9 @@
           <n-gi span="2 720:1"><n-form-item label="投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="每人最多修改投票次数"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="每人最多重投次数"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100" :disabled="!form.allowVoteChange" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
         </n-grid>
-        <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许修改自己的选择</n-checkbox></n-space>
+        <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许重新投票</n-checkbox><n-text depth="3">重投次数为 0 时，禁止修改投票。</n-text></n-space>
       </n-card>
 
       <n-card size="small" class="form-footer">
@@ -54,7 +54,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline, ArrowBackOutline, ArrowForwardOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';

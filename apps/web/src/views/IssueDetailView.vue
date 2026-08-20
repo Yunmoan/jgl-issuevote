@@ -44,13 +44,13 @@
             </n-card>
 
             <n-card title="表决/投票" size="small" class="vote-card">
-              <template #header-extra><n-space><n-text>{{ detail.myVote ? '您已表决' : '尚未表决' }}</n-text><n-tag v-if="detail.myVote" size="small" type="info"
+              <template #header-extra><n-space align="center" :size="8"><n-text>{{ detail.myVote ? '您已表决' : '尚未表决' }}</n-text><n-tag v-if="detail.myVote" size="small" :type="voteTagType(detail.myVote.choice)"
                   :bordered="false">{{ voteText(detail.myVote.choice) }}</n-tag><n-icon v-else color="#1677ff">
                   <BarChartOutline />
                 </n-icon></n-space></template>
               <n-alert v-if="!detail.viewer.canVote" type="info" :bordered="false">当前账号没有投票权限，或不在投票时间内。</n-alert>
               <template v-else>
-                <n-radio-group v-model:value="choice" class="vote-choice-group">
+                <n-radio-group v-model:value="choice" :disabled="voteChangeBlocked" class="vote-choice-group">
                   <n-radio-button value="agree"><n-space align="center" :size="6"><n-icon color="#12b76a">
                         <CheckmarkCircleOutline />
                       </n-icon><span>同意</span></n-space></n-radio-button>
@@ -62,7 +62,7 @@
                       </n-icon><span>弃权/不参与</span></n-space></n-radio-button>
                 </n-radio-group>
                 <n-space class="vote-submit" align="center" :size="12"><n-button type="primary" :disabled="!canSubmitVote"
-                    @click="submitVote">{{ detail.myVote ? '更新投票' : '提交投票' }}</n-button><n-text v-if="voteHint"
+                    @click="submitVote">{{ detail.myVote ? '重新投票' : '提交投票' }}</n-button><n-text v-if="voteHint"
                     depth="3">{{ voteHint }}</n-text></n-space>
               </template>
               <n-divider />
@@ -75,17 +75,16 @@
             </n-card>
 
             <n-card class="comments-card" title="意见" size="large">
-              <template #header-extra><n-badge :value="comments.length" :max="99" /></template>
+              <template #header-extra><n-badge :value="comments.length" :max="99" :show-zero="true" /></template>
               <n-empty v-if="comments.length === 0" description="暂无已公开意见" size="small" class="empty-comments" />
-              <n-list v-else :show-divider="true">
-                <n-list-item v-for="comment in comments" :key="comment.id">
+              <n-list v-else :show-divider="true" class="comment-list">
+                <n-list-item v-for="comment in comments" :key="comment.id" class="comment-item">
                   <template #prefix><n-avatar round :size="32" :src="comment.author.avatarUrl || undefined">{{
                     comment.author.displayName.slice(0, 1) }}</n-avatar></template>
                   <n-thing>
-                    <template #header><n-text strong>{{ comment.author.displayName }}</n-text></template>
-                    <template #header-extra><n-space :size="6" align="center" class="comment-meta"><n-text depth="3" class="comment-time">{{
-                      formatTime(comment.createdAt) }}</n-text><n-text v-if="comment.editedAt" depth="3" class="comment-time">已编辑 {{ formatTime(comment.editedAt) }}</n-text><n-tag v-if="!comment.published" size="small"
-                          type="warning">待统一公布</n-tag><n-tooltip v-if="comment.viewerCanEdit"><template #trigger><n-button text circle size="small" aria-label="编辑意见" @click="startCommentEdit(comment)"><template #icon><n-icon><CreateOutline /></n-icon></template></n-button></template>编辑意见</n-tooltip></n-space></template>
+                    <template #header><n-space align="center" :size="8"><n-text strong>{{ comment.author.displayName }}</n-text><n-tag v-if="!comment.published" size="small" type="warning" :bordered="false">待统一公布</n-tag></n-space></template>
+                    <template #header-extra><n-tooltip v-if="comment.viewerCanEdit"><template #trigger><n-button text circle size="small" aria-label="编辑意见" @click="startCommentEdit(comment)"><template #icon><n-icon><CreateOutline /></n-icon></template></n-button></template>编辑意见</n-tooltip></template>
+                    <n-space :size="8" class="comment-meta"><n-text depth="3" class="comment-time">{{ formatTime(comment.createdAt) }}</n-text><n-text v-if="comment.editedAt" depth="3" class="comment-time">已编辑 {{ formatTime(comment.editedAt) }}</n-text></n-space>
                     <template v-if="editingCommentId === comment.id">
                       <ContentEditor v-model="editingCommentBody" :min-rows="4" />
                       <n-space justify="end" class="comment-edit-actions"><n-button size="small" @click="cancelCommentEdit">取消</n-button><n-button size="small" type="primary" :loading="savingComment" :disabled="!hasContent(editingCommentBody)" @click="saveCommentEdit(comment.id)">保存</n-button></n-space>
@@ -96,10 +95,11 @@
               </n-list>
               <n-divider v-if="detail.viewer.canComment" />
               <n-form v-if="detail.viewer.canComment" class="comment-form" @submit.prevent="submitComment">
-                <n-form-item label="发表意见" :show-feedback="false">
+                <n-space justify="space-between" align="center" class="comment-composer-heading"><n-text strong>发表意见</n-text><n-text depth="3">还可发表 {{ detail.viewer.commentRemaining }} 次</n-text></n-space>
+                <n-form-item :show-feedback="false">
                   <ContentEditor v-model="commentBody" :min-rows="4" placeholder="写下你对该议题的意见，支持 Markdown、图片与基本富文本。" />
                 </n-form-item>
-                <n-space justify="space-between" align="center"><n-text depth="3">还可发表 {{ detail.viewer.commentRemaining }} 次意见</n-text><n-button type="primary" :disabled="!hasContent(commentBody)"
+                <n-space justify="end"><n-button type="primary" :disabled="!hasContent(commentBody)"
                     @click="submitComment"><template #icon><n-icon>
                         <SendOutline />
                       </n-icon></template>提交意见</n-button></n-space>
@@ -125,7 +125,7 @@
                   }}</n-descriptions-item>
                 <n-descriptions-item label="投票权限">{{ groupNames(detail.issue.voteGroups) || '可见用户'
                   }}</n-descriptions-item>
-                <n-descriptions-item label="改票上限">{{ detail.issue.allowVoteChange ? `每人 ${detail.issue.maxVoteChanges} 次` : '不允许' }}</n-descriptions-item>
+                <n-descriptions-item label="重投规则">{{ revotePolicy }}</n-descriptions-item>
               </n-descriptions>
             </n-card>
           </aside>
@@ -164,13 +164,19 @@ const commentBody = ref('');
 const errorMessage = ref('');
 const showEditor = ref(false); const savingEdit = ref(false); const editTitle = ref(''); const editBody = ref('');
 const editingCommentId = ref<string | null>(null); const editingCommentBody = ref(''); const savingComment = ref(false);
-const canSubmitVote = computed(() => Boolean(choice.value) && Boolean(detail.value?.viewer.canVote) && (!detail.value?.myVote || (detail.value.issue.allowVoteChange && detail.value.myVote.changeCount < detail.value.issue.maxVoteChanges)));
+const voteChangeBlocked = computed(() => Boolean(detail.value?.myVote) && (!detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0 || detail.value.myVote.changeCount >= detail.value.issue.maxVoteChanges));
+const canSubmitVote = computed(() => Boolean(choice.value) && Boolean(detail.value?.viewer.canVote) && !voteChangeBlocked.value);
+const revotePolicy = computed(() => {
+  if (!detail.value?.issue || !detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0) return '禁止修改投票';
+  return `每人最多重投 ${detail.value.issue.maxVoteChanges} 次`;
+});
 const voteHint = computed(() => {
   if (!detail.value?.viewer.canVote) return '';
+  if (voteChangeBlocked.value) return detail.value.issue.maxVoteChanges === 0 || !detail.value.issue.allowVoteChange ? '本议题禁止修改投票。' : '已达到重投次数上限。';
   if (!choice.value) return '请选择一个投票选项。';
-  if (!detail.value.myVote) return `提交后还可修改 ${detail.value.issue.maxVoteChanges} 次。`;
+  if (!detail.value.myVote) return detail.value.issue.maxVoteChanges === 0 ? '本议题禁止修改投票。' : `提交后还可重投 ${detail.value.issue.maxVoteChanges} 次。`;
   const remaining = Math.max(detail.value.issue.maxVoteChanges - detail.value.myVote.changeCount, 0);
-  return detail.value.issue.allowVoteChange ? (remaining ? `本次修改后还可修改 ${remaining - 1} 次。` : '已达到修改投票上限。') : '该议题不允许修改投票。';
+  return remaining ? `本次重投后还可重投 ${remaining - 1} 次。` : '已达到重投次数上限。';
 });
 const commentDisabledText = computed(() => {
   if (!detail.value) return '';
@@ -202,6 +208,7 @@ function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(v
 function statusText(value: string) { return { open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
 function visibilityText(value: string) { return { public: '公开可见', login: '登录可见', groups: '群组可见' }[value] || value; }
 function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权/不参与' }[value] || value; }
+function voteTagType(value: string): 'success' | 'error' | 'warning' | 'default' { return { agree: 'success', disagree: 'error', abstain: 'warning' }[value] as 'success' | 'error' | 'warning' | undefined || 'default'; }
 function groupNames(groups: Array<{ name: string }> = []) { return groups.map((group) => group.name).join('、'); }
 function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }); }
 onMounted(load);
@@ -232,7 +239,7 @@ onMounted(load);
 }
 
 .comment-content {
-  margin-top: 6px;
+  margin-top: 10px;
   color: #344054;
   line-height: 1.75;
   white-space: pre-wrap;
@@ -249,11 +256,23 @@ onMounted(load);
 }
 
 .comment-meta {
-  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .comment-edit-actions {
   margin-top: 10px;
+}
+
+.comment-list {
+  margin: 0 -4px;
+}
+
+.comment-item :deep(.n-list-item__prefix) {
+  margin-right: 12px;
+}
+
+.comment-composer-heading {
+  margin-bottom: 10px;
 }
 
 .empty-comments {
