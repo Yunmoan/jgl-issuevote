@@ -16,6 +16,7 @@
                 }}</n-tag>
               <n-tag v-if="detail.issue.outcome !== 'pending'" :type="outcomeTagType(detail.issue.outcome)" :bordered="false">{{ outcomeText(detail.issue.outcome) }}</n-tag>
               <n-tag :bordered="false">{{ visibilityText(detail.issue.visibility) }}</n-tag>
+              <n-tag v-if="detail.issue.commentAnonymous" type="warning" :bordered="false">意见匿名</n-tag>
               <n-tag v-for="label in detail.issue.labels" :key="label.id"
                 :color="{ color: `${label.color}1a`, textColor: label.color }">{{ label.name }}</n-tag>
             </n-space>
@@ -25,7 +26,7 @@
           <n-space :size="8"><n-button v-if="detail.viewer.canEdit && detail.issue.status !== 'archived'" key="edit" tertiary
               @click="openEditor"><template #icon><n-icon>
                   <CreateOutline />
-                </n-icon></template>编辑</n-button><n-button v-if="detail.viewer.canStartVoting" key="start-voting" type="primary" secondary @click="confirmStartVoting"><template #icon><n-icon><PlayCircleOutline /></n-icon></template>开始投票</n-button><n-button
+                </n-icon></template>编辑</n-button><n-button v-if="detail.viewer.canStartVoting" key="start-voting" type="primary" secondary @click="openStartVoting"><template #icon><n-icon><PlayCircleOutline /></n-icon></template>开始投票</n-button><n-button
               key="close"
               v-if="detail.viewer.canEdit && ['open', 'voting'].includes(detail.issue.status)"
               :type="detail.issue.status === 'closed' ? 'primary' : 'default'" secondary
@@ -105,6 +106,7 @@
                           <template #prefix><n-avatar round :size="24" :src="reply.author.avatarUrl || undefined">{{ reply.author.displayName.slice(0, 1) }}</n-avatar></template>
                           <n-thing>
                             <template #header><n-text strong>{{ reply.author.displayName }}</n-text></template>
+                            <template #header-extra><n-space :size="2"><n-tooltip v-if="reply.viewerCanDelete"><template #trigger><n-button text circle size="small" aria-label="删除回复" @click="confirmDeleteReply(comment, reply)"><template #icon><n-icon><TrashOutline /></n-icon></template></n-button></template>删除回复</n-tooltip><n-tooltip v-if="reply.viewerCanModerate"><template #trigger><n-button text circle size="small" type="warning" aria-label="屏蔽回复" @click="confirmHideReply(comment, reply)"><template #icon><n-icon><EyeOffOutline /></n-icon></template></n-button></template>屏蔽回复</n-tooltip></n-space></template>
                             <div class="reply-content rendered-content" v-html="renderContent(reply.bodyMd)" />
                             <n-space justify="end" class="reply-time"><n-text depth="3" class="comment-time">{{ formatTime(reply.createdAt) }}</n-text></n-space>
                           </n-thing>
@@ -165,6 +167,7 @@
                 <n-descriptions-item label="意见截止">{{ detail.issue.commentEndsAt ? formatTime(detail.issue.commentEndsAt)
                   : '未设置'
                   }}</n-descriptions-item>
+                <n-descriptions-item label="意见展示">{{ detail.issue.commentAnonymous ? '匿名展示意见与回复' : '显示成员身份' }}</n-descriptions-item>
                 <n-descriptions-item label="意见上限">每人 {{ detail.issue.maxCommentsPerUser }} 次</n-descriptions-item>
                 <n-descriptions-item label="最后更新">{{ formatTime(detail.issue.updatedAt) }}</n-descriptions-item>
                 <n-descriptions-item label="查看权限">{{ groupNames(detail.issue.viewGroups) || '按可见性'
@@ -184,14 +187,15 @@
           <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="editViewGroupKeys" multiple :options="groupOptions" :disabled="editVisibility !== 'groups'" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="分类"><n-select v-model:value="editLabelIds" multiple :options="labelOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="editCommentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="editCommentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="editCommentEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditCommentEndDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="editMaxCommentsPerUser" :min="1" :max="100" style="width: 100%" /></n-form-item></n-gi>
         </n-grid>
+        <n-checkbox v-model:checked="editCommentAnonymous">意见与回复匿名展示</n-checkbox>
         <n-checkbox v-model:checked="editVotingEnabled">启用投票器</n-checkbox>
         <n-grid v-if="editVotingEnabled" :cols="2" :x-gap="16" responsive="screen" item-responsive class="edit-vote-grid">
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="editVoteGroupKeys" multiple :options="groupOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="editVoteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="editVoteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="editVoteEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditVoteEndDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="editVoteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="editPassRule" :options="passRuleOptions" /></n-form-item></n-gi>
           <n-gi v-if="editPassRule === 'custom'" span="2"><n-form-item label="自定义通过规则"><n-input v-model:value="editCustomPassRule" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" maxlength="500" show-count /></n-form-item></n-gi>
@@ -200,6 +204,9 @@
         <n-checkbox v-if="editVotingEnabled" v-model:checked="editAllowVoteChange" class="edit-revote">投票结束前允许重新投票</n-checkbox>
       </n-form>
       <template #footer><n-space justify="end"><n-button @click="showEditor = false">取消</n-button><n-button type="primary" :loading="savingEdit" @click="saveEdit">保存修改</n-button></n-space></template>
+    </n-modal>
+    <n-modal v-model:show="showStartVotingDialog" preset="dialog" title="开始投票" positive-text="确认开始" negative-text="取消" @positive-click="startVoting" @negative-click="showStartVotingDialog = false">
+      <n-form-item label="投票时长"><n-input-number v-model:value="manualVoteDurationMinutes" :min="1" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item>
     </n-modal>
     <n-modal v-model:show="showCloseDialog" preset="dialog" title="关闭议题" positive-text="确认关闭" negative-text="取消" @positive-click="closeIssue" @negative-click="showCloseDialog = false">
       <n-space vertical :size="12"><n-text>关闭后将停止讨论和投票。请选择关闭后的可见范围。</n-text><n-radio-group v-model:value="closeVisibility"><n-space vertical><n-radio value="retain">保持现有可见范围</n-radio><n-radio value="public">公开给所有访客</n-radio></n-space></n-radio-group></n-space>
@@ -210,11 +217,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArchiveOutline, BarChartOutline, ChatbubbleOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, PlayCircleOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
+import { ArchiveOutline, BarChartOutline, ChatbubbleOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, EyeOffOutline, LockClosedOutline, PlayCircleOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline, TrashOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { NAlert, NAvatar, NBadge, NButton, NCard, NCheckbox, NDatePicker, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NList, NListItem, NModal, NRadio, NRadioButton, NRadioGroup, NResult, NSelect, NSpace, NSpin, NStatistic, NTag, NText, NThing, NTooltip, useDialog, useMessage } from 'naive-ui';
-import { apiGet, apiPost, apiPut } from '../api';
+import { apiDelete, apiGet, apiPost, apiPut } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
 
 const route = useRoute();
@@ -229,11 +236,12 @@ const commentBody = ref('');
 const errorMessage = ref('');
 const showEditor = ref(false); const savingEdit = ref(false); const editTitle = ref(''); const editBody = ref('');
 const editVisibility = ref('login'); const editViewGroupKeys = ref<string[]>([]); const editVoteGroupKeys = ref<string[]>([]); const editLabelIds = ref<number[]>([]);
-const editCommentPublishAt = ref<number | null>(null); const editCommentEndsAt = ref<number | null>(null); const editMaxCommentsPerUser = ref(3);
+const editCommentPublishAt = ref<number | null>(null); const editCommentEndsAt = ref<number | null>(null); const editCommentAnonymous = ref(false); const editMaxCommentsPerUser = ref(3);
 const editVotingEnabled = ref(true); const editVoteStartsAt = ref<number | null>(null); const editVoteEndsAt = ref<number | null>(null); const editVoteVisibility = ref('counts_after_close');
 const editAllowVoteChange = ref(true); const editMaxVoteChanges = ref(1); const editPassRule = ref('simple_majority'); const editCustomPassRule = ref('');
 const groupOptions = ref<Array<{ label: string; value: string }>>([]); const labelOptions = ref<Array<{ label: string; value: number }>>([]);
 const showCloseDialog = ref(false); const closeVisibility = ref<'retain' | 'public'>('retain'); const closingIssue = ref(false);
+const showStartVotingDialog = ref(false); const manualVoteDurationMinutes = ref(60);
 const editingCommentId = ref<string | null>(null); const editingCommentBody = ref(''); const savingComment = ref(false);
 const replyingCommentId = ref<string | null>(null); const replyBody = ref(''); const submittingReply = ref(false);
 const voteChangeBlocked = computed(() => Boolean(detail.value?.myVote) && (!detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0 || detail.value.myVote.changeCount >= detail.value.issue.maxVoteChanges));
@@ -270,8 +278,14 @@ async function load() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    detail.value = await apiGet(`/issues/${route.params.number}`);
-    comments.value = await apiGet(`/issues/${route.params.number}/comments`);
+    const [issueDetail, issueComments, config] = await Promise.all([
+      apiGet<any>(`/issues/${route.params.number}`),
+      apiGet<any[]>(`/issues/${route.params.number}/comments`),
+      apiGet<{ timePresets?: { voteShortMinutes?: number } }>('/site-config')
+    ]);
+    detail.value = issueDetail;
+    comments.value = issueComments;
+    manualVoteDurationMinutes.value = Math.max(1, Number(config.timePresets?.voteShortMinutes) || 60);
     choice.value = null;
     syncEditFields();
   } catch (error) {
@@ -287,6 +301,8 @@ async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { i
 function startReply(comment: any) { replyingCommentId.value = comment.id; replyBody.value = ''; }
 function cancelReply() { replyingCommentId.value = null; replyBody.value = ''; }
 async function submitReply(commentId: string) { if (!hasContent(replyBody.value)) return; submittingReply.value = true; try { await apiPost(`/issues/${route.params.number}/comments/${commentId}/replies`, { bodyMd: replyBody.value }); comments.value = await apiGet(`/issues/${route.params.number}/comments`); cancelReply(); message.success('回复已发送'); } finally { submittingReply.value = false; } }
+function confirmDeleteReply(comment: any, reply: any) { dialog.warning({ title: '删除回复', content: '确认删除这条回复吗？删除后将不再对其他成员展示。', positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/issues/${route.params.number}/comments/${comment.id}/replies/${reply.id}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('回复已删除'); } catch (error) { message.error(error instanceof Error ? error.message : '删除回复失败'); return false; } } }); }
+function confirmHideReply(comment: any, reply: any) { dialog.warning({ title: '屏蔽回复', content: '确认屏蔽这条回复吗？屏蔽后将不再对成员展示，并保留操作记录。', positiveText: '确认屏蔽', negativeText: '取消', onPositiveClick: async () => { try { await apiPost(`/issues/${route.params.number}/comments/${comment.id}/replies/${reply.id}/hide`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('回复已屏蔽'); } catch (error) { message.error(error instanceof Error ? error.message : '屏蔽回复失败'); return false; } } }); }
 function startCommentEdit(comment: any) { editingCommentId.value = comment.id; editingCommentBody.value = comment.bodyMd; }
 function cancelCommentEdit() { editingCommentId.value = null; editingCommentBody.value = ''; }
 async function saveCommentEdit(commentId: string) { if (!hasContent(editingCommentBody.value)) return; savingComment.value = true; try { await apiPut(`/issues/${route.params.number}/comments/${commentId}`, { bodyMd: editingCommentBody.value }); await load(); cancelCommentEdit(); message.success('意见已保存'); } finally { savingComment.value = false; } }
@@ -318,7 +334,8 @@ async function closeIssue() {
   }
 }
 async function updateIssueStatus(reopening: boolean) { try { detail.value = await apiPost(`/issues/${route.params.number}/${reopening ? 'reopen' : 'close'}`, reopening ? undefined : { visibility: 'retain' }); message.success(reopening ? '议题已重新开启' : '议题已关闭'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
-function confirmStartVoting() { dialog.warning({ title: '开始投票', content: '开始后，符合投票权限的成员即可提交投票。', positiveText: '确认开始', negativeText: '取消', onPositiveClick: async () => { try { detail.value = await apiPost(`/issues/${route.params.number}/start-voting`); message.success('投票已开始'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } } }); }
+function openStartVoting() { showStartVotingDialog.value = true; }
+async function startVoting() { try { detail.value = await apiPost(`/issues/${route.params.number}/start-voting`, { durationMinutes: manualVoteDurationMinutes.value }); showStartVotingDialog.value = false; message.success('投票已开始'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
 function confirmOutcome() { dialog.warning({ title: '确认议题结果', content: '自定义规则需要由审计员或管理员确认最终结果。', positiveText: '确认通过', negativeText: '确认未通过', onPositiveClick: () => submitOutcome('passed'), onNegativeClick: () => submitOutcome('rejected') }); }
 async function submitOutcome(outcome: 'passed' | 'rejected') { try { detail.value = await apiPost(`/issues/${route.params.number}/outcome`, { outcome }); message.success(outcome === 'passed' ? '已确认议题通过' : '已确认议题未通过'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
 function confirmArchive() { dialog.warning({ title: '归档议题', content: '归档后议题将停止讨论和投票，且不可重新开启。', positiveText: '确认归档', negativeText: '取消', onPositiveClick: async () => { try { detail.value = await apiPost(`/issues/${route.params.number}/archive`); message.success('议题已归档'); } catch (error) { message.error(error instanceof Error ? error.message : '归档失败'); return false; } } }); }
@@ -335,12 +352,13 @@ async function openEditor() {
 }
 async function saveEdit() {
   if (!editTitle.value.trim() || !hasContent(editBody.value)) return;
+  if (!validateEditTimePlan()) return;
   savingEdit.value = true;
   try {
     detail.value = await apiPut(`/issues/${route.params.number}`, {
       title: editTitle.value.trim(), bodyMd: editBody.value, visibility: editVisibility.value, viewGroupKeys: editViewGroupKeys.value,
       voteGroupKeys: editVoteGroupKeys.value, labelIds: editLabelIds.value, commentPublishAt: toIso(editCommentPublishAt.value),
-      commentEndsAt: toIso(editCommentEndsAt.value), maxCommentsPerUser: editMaxCommentsPerUser.value, votingEnabled: editVotingEnabled.value,
+      commentEndsAt: toIso(editCommentEndsAt.value), commentAnonymous: editCommentAnonymous.value, maxCommentsPerUser: editMaxCommentsPerUser.value, votingEnabled: editVotingEnabled.value,
       voteStartsAt: editVotingEnabled.value ? toIso(editVoteStartsAt.value) : null, voteEndsAt: editVotingEnabled.value ? toIso(editVoteEndsAt.value) : null,
       voteVisibility: editVoteVisibility.value, allowVoteChange: editAllowVoteChange.value, maxVoteChanges: editMaxVoteChanges.value,
       quorumCount: detail.value.issue.quorumCount, passRule: editPassRule.value, customPassRule: editPassRule.value === 'custom' ? editCustomPassRule.value.trim() : null
@@ -358,12 +376,21 @@ function syncEditFields() {
   const issue = detail.value.issue;
   editTitle.value = issue.title; editBody.value = issue.bodyMd; editVisibility.value = issue.visibility;
   editViewGroupKeys.value = issue.viewGroups.map((group: any) => group.groupKey); editVoteGroupKeys.value = issue.voteGroups.map((group: any) => group.groupKey);
-  editLabelIds.value = issue.labels.map((label: any) => Number(label.id)); editCommentPublishAt.value = toPickerValue(issue.commentPublishAt); editCommentEndsAt.value = toPickerValue(issue.commentEndsAt);
+  editLabelIds.value = issue.labels.map((label: any) => Number(label.id)); editCommentPublishAt.value = toPickerValue(issue.commentPublishAt); editCommentEndsAt.value = toPickerValue(issue.commentEndsAt); editCommentAnonymous.value = Boolean(issue.commentAnonymous);
   editMaxCommentsPerUser.value = issue.maxCommentsPerUser; editVotingEnabled.value = issue.votingEnabled; editVoteStartsAt.value = toPickerValue(issue.voteStartsAt); editVoteEndsAt.value = toPickerValue(issue.voteEndsAt);
   editVoteVisibility.value = issue.voteVisibility; editAllowVoteChange.value = issue.allowVoteChange; editMaxVoteChanges.value = issue.maxVoteChanges; editPassRule.value = issue.passRule; editCustomPassRule.value = issue.customPassRule || '';
 }
 function toPickerValue(value: string | null) { return value ? new Date(value).getTime() : null; }
 function toIso(value: number | null) { return value ? new Date(value).toISOString() : null; }
+function validateEditTimePlan() {
+  if (editCommentEndsAt.value && editCommentPublishAt.value && editCommentEndsAt.value <= editCommentPublishAt.value) { message.error('意见截止时间必须晚于意见开始时间'); return false; }
+  if (editVotingEnabled.value && Boolean(editVoteStartsAt.value) !== Boolean(editVoteEndsAt.value)) { message.error('自动投票的开始和结束时间必须同时设置'); return false; }
+  if (editVoteStartsAt.value && editVoteEndsAt.value && editVoteEndsAt.value <= editVoteStartsAt.value) { message.error('投票结束时间必须晚于开始时间'); return false; }
+  return true;
+}
+function disableEditCommentEndDate(timestamp: number) { return Boolean(editCommentPublishAt.value && timestamp < startOfDay(editCommentPublishAt.value)); }
+function disableEditVoteEndDate(timestamp: number) { return Boolean(editVoteStartsAt.value && timestamp < startOfDay(editVoteStartsAt.value)); }
+function startOfDay(timestamp: number) { const date = new Date(timestamp); date.setHours(0, 0, 0, 0); return date.getTime(); }
 function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim().length > 0; }
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }
 function statusText(value: string) { return { pending_review: '待预审', review_rejected: '预审驳回', open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }

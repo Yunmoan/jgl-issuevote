@@ -11,6 +11,9 @@ type FeishuDepartment = {
   open_department_id?: string;
   name?: string;
   parent_department_id?: string;
+  leader_user_id?: string;
+  leaders?: Array<{ leader_id?: string; leader_type?: string }>;
+  member_count?: number;
 };
 
 @Injectable()
@@ -81,7 +84,7 @@ export class FeishuOrganizationService {
   }
 
   private async departments(token: string) {
-    const all = new Map<string, FeishuDepartment>();
+    const ids = new Set<string>();
     let pageToken: string | undefined;
     do {
       const data = await this.feishuGet<{ items?: FeishuDepartment[]; has_more?: boolean; page_token?: string }>(
@@ -97,11 +100,11 @@ export class FeishuOrganizationService {
       );
       for (const department of data.items || []) {
         const id = String(department.open_department_id || '').trim();
-        if (id) all.set(id, department);
+        if (id) ids.add(id);
       }
       pageToken = data.has_more && data.page_token ? data.page_token : undefined;
     } while (pageToken);
-    return [...all.values()];
+    return this.departmentDetails([...ids], token);
   }
 
   private async departmentGroup(departmentId: string, token: string) {
@@ -110,12 +113,7 @@ export class FeishuOrganizationService {
       { departmentId }
     );
     if (existing) return existing;
-    const data = await this.feishuGet<{ department?: FeishuDepartment }>(
-      `/contact/v3/departments/${encodeURIComponent(departmentId)}`,
-      token,
-      { department_id_type: 'open_department_id' }
-    );
-    const department = data.department;
+    const [department] = await this.departmentDetails([departmentId], token);
     if (!department?.open_department_id) throw new BadGatewayException('飞书部门信息缺少 open_department_id');
     await this.upsertDepartment(department);
     const group = await this.db.first(
@@ -124,6 +122,23 @@ export class FeishuOrganizationService {
     );
     if (!group) throw new BadGatewayException('飞书部门权限组创建失败');
     return group;
+  }
+
+  private async departmentDetails(departmentIds: string[], token: string) {
+    const all = new Map<string, FeishuDepartment>();
+    for (const ids of chunks([...new Set(departmentIds)], 50)) {
+      if (!ids.length) continue;
+      const data = await this.feishuGet<{ items?: FeishuDepartment[] }>(
+        '/contact/v3/departments/batch',
+        token,
+        { department_ids: ids, department_id_type: 'open_department_id' }
+      );
+      for (const department of data.items || []) {
+        const id = String(department.open_department_id || '').trim();
+        if (id) all.set(id, department);
+      }
+    }
+    return [...all.values()];
   }
 
   private async upsertDepartment(department: FeishuDepartment) {
@@ -142,7 +157,7 @@ export class FeishuOrganizationService {
       const result = await this.db.exec(
         `INSERT INTO permission_groups (group_key, name, description, kind, is_assignable, created_at, updated_at)
          VALUES (:groupKey, :name, :description, 'feishu_org', FALSE, :now, :now)`,
-        { groupKey, name, description: `飞书部门（${truncate(departmentId, 180)}）`, now }
+        { groupKey, name, description: departmentDescription(department), now }
       );
       groupId = String(result.insertId);
       await this.db.exec(
@@ -156,7 +171,7 @@ export class FeishuOrganizationService {
       `UPDATE permission_groups
        SET name = :name, description = :description, kind = 'feishu_org', is_assignable = FALSE, updated_at = :now
        WHERE id = :groupId`,
-      { groupId, name, description: `飞书部门（${truncate(departmentId, 180)}）`, now }
+      { groupId, name, description: departmentDescription(department), now }
     );
     await this.db.exec(
       `UPDATE feishu_department_groups
@@ -183,11 +198,12 @@ export class FeishuOrganizationService {
     );
   }
 
-  private async feishuGet<T>(path: string, token: string, params: Record<string, string | number | boolean>) {
+  private async feishuGet<T>(path: string, token: string, params: Record<string, string | number | boolean | string[]>) {
     try {
       const response = await axios.get(`${FEISHU_API_BASE}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
         params,
+        paramsSerializer: { indexes: null },
         timeout: 10_000
       });
       if (Number(response.data?.code || 0) !== 0) {
@@ -215,6 +231,21 @@ function uniqueDepartmentIds(value: unknown) {
 
 function truncate(value: string, limit: number) {
   return value.length > limit ? value.slice(0, limit) : value;
+}
+
+function chunks<T>(values: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
+}
+
+function departmentDescription(department: FeishuDepartment) {
+  const departmentId = truncate(String(department.open_department_id || ''), 180);
+  const details = [`飞书部门（${departmentId}）`];
+  if (Number.isInteger(Number(department.member_count))) details.push(`成员 ${Number(department.member_count)}`);
+  const leaderId = department.leader_user_id || department.leaders?.map((leader) => leader.leader_id).find(Boolean);
+  if (leaderId) details.push(`负责人 ${truncate(String(leaderId), 60)}`);
+  return truncate(details.join(' · '), 300);
 }
 
 function requiredFeishuEnv(name: string) {

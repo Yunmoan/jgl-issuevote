@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
 import { nowSql } from '../db/sql-time';
 import type { Viewer } from '../types';
@@ -155,7 +155,7 @@ export class UsersService {
   async publicSiteConfig() {
     const rows = await this.db.rows(
       `SELECT setting_key, setting_value FROM system_settings
-       WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode', 'ai_review_config')`
+       WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode', 'ai_review_config', 'issue_time_presets')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, safeJson(row.setting_value)]));
     const siteName = typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联事项';
@@ -166,20 +166,22 @@ export class UsersService {
       defaultIssueVisibility: ['public', 'login', 'groups'].includes(String(values.default_issue_visibility)) ? values.default_issue_visibility : 'login',
       footerText: typeof values.footer_text === 'string' && values.footer_text.trim() ? values.footer_text.trim() : `版权所有 © ${new Date().getFullYear()} ${siteName}`,
       watermarkMode: ['off', 'global', 'issue'].includes(String(values.watermark_mode)) ? values.watermark_mode : 'off',
-      issueReviewMode: reviewMode(values.ai_review_config)
+      issueReviewMode: reviewMode(values.ai_review_config),
+      timePresets: normalizedTimePresets(values.issue_time_presets)
     };
   }
 
   async setSetting(key: string, value: unknown, actor: Viewer) {
     this.requireAdmin(actor);
     if (key === 'ai_review_config') throw new ForbiddenException('请使用 AI 预审设置接口更新该配置');
+    const normalizedValue = key === 'issue_time_presets' ? validateTimePresets(value) : value;
     await this.db.exec(
       `INSERT INTO system_settings (setting_key, setting_value, updated_by, updated_at)
        VALUES (:key, :value, :actorId, :now)
        ON DUPLICATE KEY UPDATE setting_value = :value, updated_by = :actorId, updated_at = :now`,
-      { key, value: JSON.stringify(value), actorId: actor.id, now: nowSql() }
+      { key, value: JSON.stringify(normalizedValue), actorId: actor.id, now: nowSql() }
     );
-    await this.audit(actor.id, 'setting.update', 'system_setting', key, { value });
+    await this.audit(actor.id, 'setting.update', 'system_setting', key, { value: normalizedValue });
     return { ok: true };
   }
 
@@ -232,4 +234,40 @@ function maskedAiReviewConfig(value: string | null) {
   if (!config || typeof config !== 'object') return { mode: 'manual', apiKeyConfigured: false };
   const { apiKey: _apiKey, ...safe } = config as Record<string, unknown>;
   return { ...safe, apiKeyConfigured: Boolean(_apiKey) };
+}
+
+const defaultTimePresets = {
+  discussionShortDays: 3,
+  discussionLongDays: 5,
+  voteInstantMinutes: 10,
+  voteShortMinutes: 60,
+  voteLongMinutes: 1_440
+};
+
+function normalizedTimePresets(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return defaultTimePresets;
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(defaultTimePresets).map(([key, fallback]) => {
+    const candidate = Number(source[key]);
+    return [key, Number.isInteger(candidate) && candidate >= 1 && candidate <= 43_200 ? candidate : fallback];
+  }));
+}
+
+function validateTimePresets(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('时间预设必须为对象');
+  const normalized = normalizedTimePresets(value) as Record<string, number>;
+  const source = value as Record<string, unknown>;
+  for (const key of Object.keys(defaultTimePresets)) {
+    const candidate = Number(source[key]);
+    if (!Number.isInteger(candidate) || candidate < 1 || candidate > 43_200) {
+      throw new BadRequestException(`时间预设 ${key} 必须是 1 到 43200 之间的整数`);
+    }
+  }
+  if (normalized.discussionShortDays > normalized.discussionLongDays) {
+    throw new BadRequestException('议题短周期不能长于长周期');
+  }
+  if (normalized.voteInstantMinutes > normalized.voteShortMinutes || normalized.voteShortMinutes > normalized.voteLongMinutes) {
+    throw new BadRequestException('投票周期必须从即时、短周期到长周期递增');
+  }
+  return normalized;
 }

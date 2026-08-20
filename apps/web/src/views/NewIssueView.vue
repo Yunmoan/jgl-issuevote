@@ -29,11 +29,14 @@
           <n-gi span="2 720:1"><n-form-item label="可见范围"><n-select v-model:value="form.visibility" :options="visibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" :loading="loadingOptions" :disabled="form.visibility !== 'groups' || !formOptionsReady" placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
+          <n-gi span="2"><n-form-item label="议题时间"><n-radio-group v-model:value="commentTimeMode"><n-space :size="12" :wrap="true"><n-radio value="short">短周期（{{ timePresets.discussionShortDays }} 天）</n-radio><n-radio value="long">长周期（{{ timePresets.discussionLongDays }} 天）</n-radio><n-radio value="days">手动输入天数</n-radio><n-radio value="specific">手动设定时间</n-radio></n-space></n-radio-group></n-form-item></n-gi>
+          <n-gi v-if="commentTimeMode === 'days'" span="2 720:1"><n-form-item label="征集天数"><n-input-number v-model:value="commentDurationDays" :min="1" :max="365" style="width: 100%"><template #suffix>天</template></n-input-number></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi v-if="commentTimeMode === 'specific'" span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableCommentEndDate" /></n-form-item></n-gi>
+          <n-gi v-else span="2 720:1"><n-form-item label="意见截止时间"><n-text>{{ commentEndsAt ? formatTime(commentEndsAt) : '未设置' }}</n-text></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="form.maxCommentsPerUser" :min="1" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
         </n-grid>
-        <n-alert type="info" :bordered="false">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-alert>
+        <n-space vertical :size="8"><n-checkbox v-model:checked="form.commentAnonymous">意见与回复匿名展示</n-checkbox><n-text depth="3">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-text></n-space>
       </n-card>
 
       <n-card v-show="currentStep === 3" title="投票规则" size="large" class="form-card">
@@ -43,8 +46,17 @@
         </n-space>
         <template v-if="form.votingEnabled">
           <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
-            <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
-            <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+            <n-gi span="2"><n-form-item label="投票时间"><n-radio-group v-model:value="voteTimeMode"><n-space :size="12" :wrap="true"><n-radio value="manual">手动开启</n-radio><n-radio value="instant">即时投票（{{ timePresets.voteInstantMinutes }} 分钟）</n-radio><n-radio value="short">短周期投票（{{ timePresets.voteShortMinutes }} 分钟）</n-radio><n-radio value="long">长周期投票（{{ timePresets.voteLongMinutes }} 分钟）</n-radio><n-radio value="minutes">手动输入分钟</n-radio><n-radio value="specific">手动设定时间</n-radio></n-space></n-radio-group></n-form-item></n-gi>
+            <template v-if="voteTimeMode !== 'manual' && voteTimeMode !== 'specific'">
+              <n-gi span="2 720:1"><n-form-item label="多久后开始投票"><n-input-number v-model:value="voteStartDelayMinutes" :min="0" :max="43200" style="width: 100%"><template #suffix>分钟后</template></n-input-number></n-form-item></n-gi>
+              <n-gi v-if="voteTimeMode === 'minutes'" span="2 720:1"><n-form-item label="投票持续时间"><n-input-number v-model:value="voteDurationMinutes" :min="1" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item></n-gi>
+              <n-gi span="2"><n-form-item label="计划"><n-text>{{ voteStartsAt ? `${formatTime(voteStartsAt)} 至 ${formatTime(voteEndsAt)}` : '未设置' }}</n-text></n-form-item></n-gi>
+            </template>
+            <template v-else-if="voteTimeMode === 'specific'">
+              <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableVoteEndDate" /></n-form-item></n-gi>
+            </template>
+            <n-gi v-else span="2"><n-form-item label="投票计划"><n-text>由创建者在议题页手动开始，并在确认时设置投票时长。</n-text></n-form-item></n-gi>
             <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
             <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
             <n-gi v-if="form.passRule === 'custom'" span="2"><n-form-item label="自定义通过规则"><n-input v-model:value="form.customPassRule" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" maxlength="500" show-count placeholder="例如：需到会成员三分之二同意，且预算不超过既定额度。" /></n-form-item></n-gi>
@@ -74,7 +86,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline, ArrowBackOutline, ArrowForwardOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NModal, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NModal, NRadio, NRadioGroup, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
@@ -100,7 +112,13 @@ const commentPublishAt = ref<number | null>(null);
 const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
-const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], votingEnabled: true, voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority', customPassRule: '' });
+const commentTimeMode = ref<'short' | 'long' | 'days' | 'specific'>('short');
+const commentDurationDays = ref(3);
+const voteTimeMode = ref<'manual' | 'instant' | 'short' | 'long' | 'minutes' | 'specific'>('manual');
+const voteStartDelayMinutes = ref(0);
+const voteDurationMinutes = ref(10);
+const timePresets = ref({ discussionShortDays: 3, discussionLongDays: 5, voteInstantMinutes: 10, voteShortMinutes: 60, voteLongMinutes: 1440 });
+const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], commentAnonymous: false, votingEnabled: true, voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority', customPassRule: '' });
 const rules: FormRules = { title: [{ required: true, min: 3, message: '议题标题至少需要 3 个字符', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
@@ -112,6 +130,7 @@ async function nextStep() {
     await formRef.value?.validate();
     if (issueReviewMode.value === 'ai' && !await runAiReview()) return;
   }
+  if (currentStep.value === 2 && !validateTimePlan()) return;
   currentStep.value += 1;
 }
 
@@ -138,6 +157,7 @@ function continueAfterSimilarIssues() {
 
 async function submit() {
   await formRef.value?.validate();
+  if (!validateTimePlan()) return;
   if (!formOptionsReady.value) {
     message.error('创建配置尚未准备完成，请稍后重试');
     return;
@@ -170,11 +190,18 @@ async function loadFormOptions() {
   loadingOptions.value = true;
   optionsError.value = '';
   try {
-    const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups'; issueReviewMode?: 'disabled' | 'manual' | 'ai' }>('/site-config')]);
+    const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups'; issueReviewMode?: 'disabled' | 'manual' | 'ai'; timePresets?: typeof timePresets.value }>('/site-config')]);
     groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
     labelOptions.value = labels.map((label) => ({ label: label.name, value: Number(label.id) }));
     form.visibility = config.defaultIssueVisibility;
     issueReviewMode.value = config.issueReviewMode || 'manual';
+    if (config.timePresets) {
+      timePresets.value = config.timePresets;
+      commentDurationDays.value = config.timePresets.discussionShortDays;
+      voteDurationMinutes.value = config.timePresets.voteInstantMinutes;
+      applyCommentPreset();
+      applyVotePreset();
+    }
     formOptionsReady.value = true;
   } catch (error) {
     formOptionsReady.value = false;
@@ -188,6 +215,72 @@ function normalizeNumericIds(ids: Array<number | string>) {
   return [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
 }
 
+function applyCommentPreset() {
+  if (commentTimeMode.value === 'specific') return;
+  const days = commentTimeMode.value === 'short'
+    ? timePresets.value.discussionShortDays
+    : commentTimeMode.value === 'long'
+      ? timePresets.value.discussionLongDays
+      : commentDurationDays.value;
+  commentEndsAt.value = Date.now() + Math.max(1, days) * 24 * 60 * 60 * 1000;
+}
+
+function applyVotePreset() {
+  if (voteTimeMode.value === 'manual') {
+    voteStartsAt.value = null;
+    voteEndsAt.value = null;
+    return;
+  }
+  if (voteTimeMode.value === 'specific') return;
+  const duration = voteTimeMode.value === 'instant'
+    ? timePresets.value.voteInstantMinutes
+    : voteTimeMode.value === 'short'
+      ? timePresets.value.voteShortMinutes
+      : voteTimeMode.value === 'long'
+        ? timePresets.value.voteLongMinutes
+        : voteDurationMinutes.value;
+  voteStartsAt.value = Date.now() + Math.max(0, voteStartDelayMinutes.value) * 60 * 1000;
+  voteEndsAt.value = voteStartsAt.value + Math.max(1, duration) * 60 * 1000;
+}
+
+function validateTimePlan() {
+  if (commentEndsAt.value) {
+    const start = commentPublishAt.value || Date.now();
+    if (commentEndsAt.value <= start) {
+      message.error('意见截止时间必须晚于意见开始时间');
+      return false;
+    }
+  }
+  if (!form.votingEnabled) return true;
+  if (Boolean(voteStartsAt.value) !== Boolean(voteEndsAt.value)) {
+    message.error('自动投票的开始和结束时间必须同时设置');
+    return false;
+  }
+  if (voteStartsAt.value && voteEndsAt.value && voteEndsAt.value <= voteStartsAt.value) {
+    message.error('投票结束时间必须晚于开始时间');
+    return false;
+  }
+  return true;
+}
+
+function disableCommentEndDate(timestamp: number) {
+  return timestamp < startOfDay(commentPublishAt.value || Date.now());
+}
+
+function disableVoteEndDate(timestamp: number) {
+  return Boolean(voteStartsAt.value && timestamp < startOfDay(voteStartsAt.value));
+}
+
+function startOfDay(timestamp: number) {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function formatTime(value: number | null) {
+  return value ? new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+}
+
 watch(() => session.viewer?.id, (viewerId) => {
   if (viewerId) void loadFormOptions();
   else formOptionsReady.value = false;
@@ -199,6 +292,9 @@ watch(() => form.votingEnabled, (enabled) => {
     voteEndsAt.value = null;
   }
 });
+
+watch([commentTimeMode, commentDurationDays, () => timePresets.value.discussionShortDays, () => timePresets.value.discussionLongDays], applyCommentPreset, { immediate: true });
+watch([voteTimeMode, voteStartDelayMinutes, voteDurationMinutes, () => timePresets.value.voteInstantMinutes, () => timePresets.value.voteShortMinutes, () => timePresets.value.voteLongMinutes], applyVotePreset, { immediate: true });
 
 watch(() => [form.title, form.bodyMd], () => {
   aiReviewToken.value = null;

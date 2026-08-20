@@ -67,6 +67,7 @@
                       <span class="issue-title">{{ issue.title }}</span>
                       <n-tag size="small" :type="statusTagType(issue.status)" :bordered="false">{{ statusText(issue.status) }}</n-tag>
                       <n-tag v-if="issue.outcome !== 'pending'" size="small" :type="outcomeTagType(issue.outcome)" :bordered="false">{{ outcomeText(issue.outcome) }}</n-tag>
+                      <n-tag v-if="issue.commentAnonymous" size="small" type="warning" :bordered="false">意见匿名</n-tag>
                       <n-tag
                         v-for="label in issue.labels"
                         :key="label.id"
@@ -88,6 +89,8 @@
                         <n-icon><ChatbubbleOutline /></n-icon>
                         {{ issue.commentCount }}
                       </span>
+                      <span v-if="issue.votingEnabled && issue.voteCount !== null" class="meta-with-icon"><n-icon><BarChartOutline /></n-icon>{{ issue.voteCount }}</span>
+                      <span v-if="issue.votingEnabled">{{ voteScheduleText(issue) }}</span>
                     </n-space>
                   </template>
                 </n-thing>
@@ -108,6 +111,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   BanOutline,
+  BarChartOutline,
   ChatbubbleOutline,
   CheckmarkCircleOutline,
   CreateOutline,
@@ -127,9 +131,12 @@ interface IssueRow {
   status: string;
   visibility: string;
   votingEnabled: boolean;
+  commentAnonymous: boolean;
   outcome: string;
   commentCount: number;
-  voteCount: number;
+  voteCount: number | null;
+  voteStartsAt: string | null;
+  voteEndsAt: string | null;
   updatedAt: string;
   createdByName: string;
   labels: Array<{ id: number; name: string; color: string }>;
@@ -195,6 +202,13 @@ function outcomeText(value: string) {
 
 function outcomeTagType(value: string): 'success' | 'error' | 'warning' | 'default' {
   return { passed: 'success', rejected: 'error', manual_required: 'warning', not_applicable: 'default' }[value] as 'success' | 'error' | 'warning' | 'default' || 'default';
+}
+
+function voteScheduleText(issue: IssueRow) {
+  if (!issue.voteStartsAt || !issue.voteEndsAt) return '手动投票';
+  const start = new Date(issue.voteStartsAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const end = new Date(issue.voteEndsAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return `${start} 至 ${end}`;
 }
 
 function labelBg(color: string) {

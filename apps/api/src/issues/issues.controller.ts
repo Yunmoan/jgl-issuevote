@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Inject, Param, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -109,9 +109,10 @@ export class IssuesController {
   }
 
   @Post('issues/:number/start-voting')
-  async startVoting(@Param('number') number: string, @Req() req: Request) {
+  async startVoting(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
-    return { data: await this.issues.startVoting(number, viewer) };
+    const parsed = z.object({ durationMinutes: z.coerce.number().int().min(1).max(43_200) }).parse(body);
+    return { data: await this.issues.startVoting(number, parsed.durationMinutes, viewer) };
   }
 
   @Post('issues/:number/outcome')
@@ -165,6 +166,18 @@ export class IssuesController {
     const viewer = await this.auth.requireViewer(req);
     const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
     return { data: await this.issues.createCommentReply(number, commentId, parsed.bodyMd, viewer) };
+  }
+
+  @Delete('issues/:number/comments/:commentId/replies/:replyId')
+  async deleteCommentReply(@Param('number') number: string, @Param('commentId') commentId: string, @Param('replyId') replyId: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.deleteCommentReply(number, commentId, replyId, viewer) };
+  }
+
+  @Post('issues/:number/comments/:commentId/replies/:replyId/hide')
+  async hideCommentReply(@Param('number') number: string, @Param('commentId') commentId: string, @Param('replyId') replyId: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.hideCommentReply(number, commentId, replyId, viewer) };
   }
 
   @Post('issues/:number/vote')
