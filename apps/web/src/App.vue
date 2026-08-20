@@ -4,26 +4,39 @@
       <n-dialog-provider>
         <n-layout class="app-shell">
           <n-layout-header bordered class="topbar">
-            <RouterLink class="brand" to="/">
-              <span class="brand-mark">冀</span>
-              <span>冀高联议事投票</span>
-            </RouterLink>
-            <nav class="topnav">
-              <RouterLink to="/">议题</RouterLink>
-              <RouterLink v-if="session.canCreateIssue" to="/issues/new">创建</RouterLink>
-              <RouterLink v-if="session.isAdmin" to="/admin">管理</RouterLink>
-            </nav>
-            <div class="top-actions">
-              <n-button v-if="!session.viewer && session.providers?.natayarkid.enabled" size="small" type="primary" @click="session.loginWithNatayarkId">
-                NatayarkID
-              </n-button>
-              <n-button v-if="!session.viewer && session.providers?.devLogin" size="small" secondary @click="session.devLogin">
-                开发登录
-              </n-button>
-              <RouterLink v-if="session.viewer" class="viewer-link" to="/me">
-                <n-avatar :size="28" :src="session.viewer.avatarUrl || undefined">{{ session.viewer.displayName.slice(0, 1) }}</n-avatar>
-                <span>{{ session.viewer.displayName }}</span>
+            <div class="topbar-inner">
+              <RouterLink class="brand" to="/">
+                <n-icon :size="34">
+                  <CheckmarkCircleOutline />
+                </n-icon>
+                <span>冀高联议事</span>
               </RouterLink>
+              <nav class="topnav" aria-label="主导航">
+                <RouterLink to="/">
+                  <n-button text>议题</n-button>
+                </RouterLink>
+                <RouterLink v-if="session.canCreateIssue" to="/issues/new">
+                  <n-button text>创建</n-button>
+                </RouterLink>
+                <RouterLink v-if="session.isAdmin" to="/admin">
+                  <n-button text>管理</n-button>
+                </RouterLink>
+              </nav>
+              <div class="top-actions">
+                <n-button v-if="!session.viewer && session.providers?.natayarkid.enabled" quaternary round @click="session.loginWithNatayarkId">
+                  <template #icon>
+                    <n-icon><LogInOutline /></n-icon>
+                  </template>
+                  <span>登录</span>
+                </n-button>
+                <n-button v-if="!session.viewer && session.providers?.devLogin" size="small" text @click="session.devLogin">
+                  开发登录
+                </n-button>
+                <RouterLink v-if="session.viewer" class="viewer-link" to="/me">
+                  <n-avatar :size="34" :src="session.viewer.avatarUrl || undefined">{{ session.viewer.displayName.slice(0, 1) }}</n-avatar>
+                  <span>{{ session.viewer.displayName }}</span>
+                </RouterLink>
+              </div>
             </div>
           </n-layout-header>
           <n-layout-content class="page">
@@ -37,7 +50,8 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { NAvatar, NButton, NConfigProvider, NDialogProvider, NLayout, NLayoutContent, NLayoutHeader, NMessageProvider } from 'naive-ui';
+import { CheckmarkCircleOutline, LogInOutline } from '@vicons/ionicons5';
+import { NAvatar, NButton, NConfigProvider, NDialogProvider, NIcon, NLayout, NLayoutContent, NLayoutHeader, NMessageProvider } from 'naive-ui';
 import { useSessionStore } from './stores/session';
 
 const session = useSessionStore();
@@ -57,4 +71,3 @@ onMounted(() => {
   session.load().catch(() => undefined);
 });
 </script>
-
