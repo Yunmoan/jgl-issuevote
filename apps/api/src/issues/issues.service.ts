@@ -231,6 +231,7 @@ export class IssuesService implements OnModuleInit {
         viewerId: viewer?.id || 0
       }
     );
+    const reactions = await this.reactionsForComments(rows.map((row) => row.id), viewer?.id || null);
     return rows.map((row) => ({
       id: String(row.id),
       bodyMd: row.body_md,
@@ -245,7 +246,10 @@ export class IssuesService implements OnModuleInit {
         avatarUrl: row.author_avatar
       },
       viewerCanSeeBeforePublish: canModerate || String(row.author_id) === viewer?.id,
-      viewerCanEdit: Boolean(viewer && String(row.author_id) === viewer.id && this.canCommentOnIssue(issue, viewer))
+      viewerCanEdit: Boolean(viewer && String(row.author_id) === viewer.id && this.canCommentOnIssue(issue, viewer)),
+      viewerCanReact: Boolean(viewer && String(row.author_id) !== viewer.id && (!row.publish_at || new Date(row.publish_at).getTime() <= Date.now())),
+      reactionCounts: reactions.get(String(row.id))?.counts || { like: 0, yes: 0, no: 0 },
+      myReactions: reactions.get(String(row.id))?.mine || []
     }));
   }
 
@@ -287,6 +291,36 @@ export class IssuesService implements OnModuleInit {
     );
     await this.audit(viewer.id, 'comment.edit', 'issue_comment', String(commentId), { issueNumber: number });
     return (await this.comments(number, viewer)).find((item) => item.id === String(commentId));
+  }
+
+  async toggleCommentReaction(number: string, commentId: string, reaction: 'like' | 'yes' | 'no', viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    const comment = await this.db.first(
+      `SELECT id, author_id, publish_at FROM issue_comments WHERE id = :commentId AND issue_id = :issueId AND deleted_at IS NULL`,
+      { commentId, issueId: detail.issue.id }
+    );
+    if (!comment) throw new NotFoundException('意见不存在');
+    if (String(comment.author_id) === viewer.id) throw new ForbiddenException('不能对自己发表的意见作出反应');
+    if (comment.publish_at && new Date(comment.publish_at).getTime() > Date.now()) throw new ForbiddenException('意见尚未公布');
+    const existing = await this.db.first(
+      `SELECT 1 AS ok FROM issue_comment_reactions WHERE comment_id = :commentId AND user_id = :userId AND reaction = :reaction`,
+      { commentId, userId: viewer.id, reaction }
+    );
+    if (existing) {
+      await this.db.exec(
+        `DELETE FROM issue_comment_reactions WHERE comment_id = :commentId AND user_id = :userId AND reaction = :reaction`,
+        { commentId, userId: viewer.id, reaction }
+      );
+    } else {
+      await this.db.exec(
+        `INSERT INTO issue_comment_reactions (comment_id, user_id, reaction, created_at) VALUES (:commentId, :userId, :reaction, :now)`,
+        { commentId, userId: viewer.id, reaction, now: nowSql() }
+      );
+    }
+    const reactions = await this.reactionsForComments([commentId], viewer.id);
+    const summary = reactions.get(String(commentId)) || { counts: { like: 0, yes: 0, no: 0 }, mine: [] };
+    await this.audit(viewer.id, 'comment.reaction', 'issue_comment', String(commentId), { issueNumber: number, reaction, active: !existing });
+    return { commentId: String(commentId), reactionCounts: summary.counts, myReactions: summary.mine };
   }
 
   async vote(number: string, choice: VoteChoice, reason: string | undefined, viewer: Viewer) {
@@ -461,6 +495,27 @@ export class IssuesService implements OnModuleInit {
     if (result.affectedRows === 0) throw new NotFoundException('标签不存在');
     await this.audit(viewer.id, 'label.delete', 'label', String(labelId), {});
     return { ok: true };
+  }
+
+  private async reactionsForComments(commentIds: unknown[], viewerId: string | null) {
+    const result = new Map<string, { counts: Record<'like' | 'yes' | 'no', number>; mine: Array<'like' | 'yes' | 'no'> }>();
+    if (commentIds.length === 0) return result;
+    const rows = await this.db.rows(
+      `SELECT comment_id, reaction, COUNT(*) AS count, SUM(user_id = :viewerId) AS mine
+       FROM issue_comment_reactions
+       WHERE comment_id IN (${commentIds.map((_, index) => `:commentId${index}`).join(',')})
+       GROUP BY comment_id, reaction`,
+      { viewerId: viewerId || 0, ...Object.fromEntries(commentIds.map((id, index) => [`commentId${index}`, id])) }
+    );
+    for (const row of rows) {
+      const key = String(row.comment_id);
+      const summary = result.get(key) || { counts: { like: 0, yes: 0, no: 0 }, mine: [] as Array<'like' | 'yes' | 'no'> };
+      const reaction = row.reaction as 'like' | 'yes' | 'no';
+      summary.counts[reaction] = Number(row.count);
+      if (Number(row.mine) > 0) summary.mine.push(reaction);
+      result.set(key, summary);
+    }
+    return result;
   }
 
   private async canViewIssue(issue: any, viewer: Viewer | null) {

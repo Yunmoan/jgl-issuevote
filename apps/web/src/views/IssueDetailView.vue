@@ -89,7 +89,14 @@
                       <ContentEditor v-model="editingCommentBody" :min-rows="4" />
                       <n-space justify="end" class="comment-edit-actions"><n-button size="small" @click="cancelCommentEdit">取消</n-button><n-button size="small" type="primary" :loading="savingComment" :disabled="!hasContent(editingCommentBody)" @click="saveCommentEdit(comment.id)">保存</n-button></n-space>
                     </template>
-                    <div v-else class="comment-content rendered-content" v-html="renderContent(comment.bodyMd)" />
+                    <template v-else>
+                      <div class="comment-content rendered-content" v-html="renderContent(comment.bodyMd)" />
+                      <n-space v-if="comment.viewerCanReact || hasReactions(comment)" class="reaction-bar" :size="6">
+                        <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'like') ? 'primary' : 'default'" :disabled="!comment.viewerCanReact" aria-label="点赞" @click="toggleReaction(comment, 'like')"><template #icon><n-icon><ThumbsUpOutline /></n-icon></template>{{ comment.reactionCounts.like || '' }}</n-button></template>点赞</n-tooltip>
+                        <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'yes') ? 'success' : 'default'" :disabled="!comment.viewerCanReact" aria-label="赞同" @click="toggleReaction(comment, 'yes')"><template #icon><n-icon><CheckmarkOutline /></n-icon></template>{{ comment.reactionCounts.yes || '' }}</n-button></template>赞同</n-tooltip>
+                        <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'no') ? 'error' : 'default'" :disabled="!comment.viewerCanReact" aria-label="反对" @click="toggleReaction(comment, 'no')"><template #icon><n-icon><CloseOutline /></n-icon></template>{{ comment.reactionCounts.no || '' }}</n-button></template>反对</n-tooltip>
+                      </n-space>
+                    </template>
                   </n-thing>
                 </n-list-item>
               </n-list>
@@ -145,7 +152,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArchiveOutline, BarChartOutline, CheckmarkCircleOutline, CloseCircleOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline } from '@vicons/ionicons5';
+import { ArchiveOutline, BarChartOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NList, NListItem, NModal, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, NTooltip, useDialog, useMessage } from 'naive-ui';
@@ -187,6 +194,7 @@ const commentDisabledText = computed(() => {
 async function load() { loading.value = true; errorMessage.value = ''; try { detail.value = await apiGet(`/issues/${route.params.number}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); choice.value = null; editTitle.value = detail.value.issue.title; editBody.value = detail.value.issue.bodyMd; } catch (error) { detail.value = null; errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。'; } finally { loading.value = false; } }
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
+async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { if (!comment.viewerCanReact) return; const result = await apiPost<{ reactionCounts: Record<string, number>; myReactions: string[] }>(`/issues/${route.params.number}/comments/${comment.id}/reactions`, { reaction }); comment.reactionCounts = result.reactionCounts; comment.myReactions = result.myReactions; }
 function startCommentEdit(comment: any) { editingCommentId.value = comment.id; editingCommentBody.value = comment.bodyMd; }
 function cancelCommentEdit() { editingCommentId.value = null; editingCommentBody.value = ''; }
 async function saveCommentEdit(commentId: string) { if (!hasContent(editingCommentBody.value)) return; savingComment.value = true; try { await apiPut(`/issues/${route.params.number}/comments/${commentId}`, { bodyMd: editingCommentBody.value }); await load(); cancelCommentEdit(); message.success('意见已保存'); } finally { savingComment.value = false; } }
@@ -209,6 +217,8 @@ function statusText(value: string) { return { open: '开放', voting: '投票中
 function visibilityText(value: string) { return { public: '公开可见', login: '登录可见', groups: '群组可见' }[value] || value; }
 function voteText(value: string) { return { agree: '同意', disagree: '不同意', abstain: '弃权/不参与' }[value] || value; }
 function voteTagType(value: string): 'success' | 'error' | 'warning' | 'default' { return { agree: 'success', disagree: 'error', abstain: 'warning' }[value] as 'success' | 'error' | 'warning' | undefined || 'default'; }
+function reactionActive(comment: any, reaction: string) { return comment.myReactions?.includes(reaction); }
+function hasReactions(comment: any) { return Object.values(comment.reactionCounts || {}).some((count) => Number(count) > 0); }
 function groupNames(groups: Array<{ name: string }> = []) { return groups.map((group) => group.name).join('、'); }
 function formatTime(value: string) { return new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }); }
 onMounted(load);
@@ -268,11 +278,17 @@ onMounted(load);
 }
 
 .comment-item :deep(.n-list-item__prefix) {
+  align-self: flex-start;
   margin-right: 12px;
+  margin-top: 3px;
 }
 
 .comment-composer-heading {
   margin-bottom: 10px;
+}
+
+.reaction-bar {
+  margin-top: 12px;
 }
 
 .empty-comments {
