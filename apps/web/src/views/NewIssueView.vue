@@ -87,6 +87,8 @@ async function submit() {
   try {
     const detail = await apiPost<any>('/issues', { ...form, commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null, commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null, voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null, voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null });
     message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
+  } catch (error) {
+    message.error(error instanceof Error ? `发布失败：${error.message}` : '发布失败，请稍后重试');
   } finally { submitting.value = false; }
 }
 onMounted(async () => {

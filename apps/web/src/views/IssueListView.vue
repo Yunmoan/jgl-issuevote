@@ -5,13 +5,23 @@
         <h1>议题</h1>
         <p v-if="siteConfig.siteDescription" class="page-subtitle">{{ siteConfig.siteDescription }}</p>
       </div>
-      <n-button v-if="session.canCreateIssue" type="primary" @click="router.push('/issues/new')">
-        <template #icon>
-          <n-icon><CreateOutline /></n-icon>
-        </template>
-        创建议题
-      </n-button>
-      <n-button v-else-if="!session.viewer" secondary @click="session.loginWithNatayarkId">登录以创建议题</n-button>
+      <div class="page-title-actions">
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-button quaternary circle :loading="loading" aria-label="刷新议题列表" @click="load">
+              <template #icon><n-icon><RefreshOutline /></n-icon></template>
+            </n-button>
+          </template>
+          刷新议题列表
+        </n-tooltip>
+        <n-button v-if="session.canCreateIssue" type="primary" @click="router.push('/issues/new')">
+          <template #icon>
+            <n-icon><CreateOutline /></n-icon>
+          </template>
+          创建议题
+        </n-button>
+        <n-button v-else-if="!session.viewer" secondary @click="session.loginWithNatayarkId">登录以创建议题</n-button>
+      </div>
     </div>
 
     <n-space vertical size="large">
@@ -94,10 +104,11 @@ import {
   CreateOutline,
   ListOutline,
   RadioButtonOnOutline,
+  RefreshOutline,
   SearchOutline,
   SyncOutline
 } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NEmpty, NIcon, NInput, NList, NListItem, NSpace, NSpin, NTabPane, NTabs, NTag, NThing } from 'naive-ui';
+import { NAlert, NButton, NCard, NEmpty, NIcon, NInput, NList, NListItem, NSpace, NSpin, NTabPane, NTabs, NTag, NThing, NTooltip } from 'naive-ui';
 import { apiGet } from '../api';
 import { useSessionStore } from '../stores/session';
 
@@ -186,6 +197,13 @@ onMounted(() => { load(); loadSiteConfig(); });
   display: block;
 }
 
+.page-title-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .issue-title {
   color: #101828;
   font-weight: 600;
@@ -209,6 +227,12 @@ onMounted(() => { load(); loadSiteConfig(); });
   :deep(.n-tabs-tab) {
     padding-right: 10px;
     padding-left: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-title-actions {
+    align-self: flex-start;
   }
 }
 </style>
