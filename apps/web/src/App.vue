@@ -38,7 +38,7 @@
             </n-layout-content>
             <n-layout-footer bordered class="site-footer"><div>{{ footerText }}</div></n-layout-footer>
           </n-layout>
-          <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="siteName+'\n用户 '+session.user?.displayName" :font-size="16" :line-height="16" :rotate="-15" :width="384" :height="156"  :x-offset="12"    :y-offset="60"/>
+          <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="watermarkContent" :font-size="16" :line-height="16" :rotate="-15" :width="500" :height="250" :x-offset="12" :y-offset="60" />
           <n-drawer v-model:show="showMobileNav" placement="right" :width="280">
             <n-drawer-content :title="siteName" closable body-content-style="padding: 8px"><n-menu :value="activeKey" :options="menuOptions" @update:value="navigate" /></n-drawer-content>
           </n-drawer>
@@ -78,6 +78,7 @@ const naiveTheme = computed(() => resolvedTheme.value === 'dark' ? darkTheme : n
 const themeIcon = computed(() => themePreference.value === 'system' ? DesktopOutline : themePreference.value === 'light' ? SunnyOutline : MoonOutline);
 const themeLabel = computed(() => ({ system: '跟随系统', light: '浅色模式', dark: '深色模式' })[themePreference.value]);
 const showWatermark = computed(() => watermarkMode.value === 'global' || (watermarkMode.value === 'issue' && route.path.startsWith('/issues/')));
+const watermarkContent = computed(() => session.viewer ? `${siteName.value}\n用户 ${session.viewer.displayName}` : siteName.value);
 const themeOverrides = { common: { primaryColor: '#1677ff', primaryColorHover: '#4096ff', primaryColorPressed: '#0958d9', primaryColorSuppl: '#1677ff', borderRadius: '6px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } };
 
 function icon(component: any) { return () => h(NIcon, null, { default: () => h(component) }); }
