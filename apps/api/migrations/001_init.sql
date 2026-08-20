@@ -222,3 +222,5 @@ INSERT IGNORE INTO labels (name, color, description, created_at) VALUES
 ('制度', '#722ed1', '章程、流程、管理制度', NOW()),
 ('紧急', '#d03050', '需要优先处理的议题', NOW());
 
+INSERT IGNORE INTO system_settings (setting_key, setting_value, updated_at) VALUES
+('site_name', '"冀高联议事"', NOW());

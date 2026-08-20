@@ -16,6 +16,10 @@ export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined });
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  return request<T>(path, { method: 'DELETE' });
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
@@ -32,4 +36,3 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
 export function authStartUrl(provider: 'natayarkid') {
   return `${API_BASE}/auth/${provider}/start`;
 }
-

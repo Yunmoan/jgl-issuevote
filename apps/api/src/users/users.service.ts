@@ -96,6 +96,14 @@ export class UsersService {
     }));
   }
 
+  async publicSiteConfig() {
+    const rows = await this.db.rows(
+      `SELECT setting_value FROM system_settings WHERE setting_key = 'site_name' LIMIT 1`
+    );
+    const value = rows[0] ? safeJson(rows[0].setting_value) : null;
+    return { siteName: typeof value === 'string' && value.trim() ? value.trim() : '冀高联议事' };
+  }
+
   async setSetting(key: string, value: unknown, actor: Viewer) {
     this.requireAdmin(actor);
     await this.db.exec(

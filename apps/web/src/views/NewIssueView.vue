@@ -1,47 +1,36 @@
 <template>
-  <main class="content-wrap">
+  <main class="content-wrap form-page">
     <div class="page-title">
-      <div>
-        <h1>创建议题</h1>
-        <div class="muted">设置可见范围、投票范围和意见统一公布时间。</div>
-      </div>
+      <div><h1>创建议题</h1><p class="page-subtitle">清晰说明议题，并设置讨论与表决的参与范围。</p></div>
     </div>
+    <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
+      <n-card title="基本信息" size="large">
+        <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>
+        <n-form-item label="议题说明" path="bodyMd"><n-input v-model:value="form.bodyMd" type="textarea" :autosize="{ minRows: 9, maxRows: 18 }" placeholder="说明背景、可选方案、执行影响或需要讨论的重点。" /></n-form-item>
+        <n-form-item label="标签"><n-select v-model:value="form.labelIds" multiple :options="labelOptions" placeholder="选择议题分类" /></n-form-item>
+      </n-card>
 
-    <n-form class="panel form-grid" label-placement="top">
-      <n-form-item label="标题">
-        <n-input v-model:value="form.title" maxlength="200" show-count />
-      </n-form-item>
-      <n-form-item label="正文">
-        <n-input v-model:value="form.bodyMd" type="textarea" :autosize="{ minRows: 8, maxRows: 16 }" />
-      </n-form-item>
-      <div class="two-col">
-        <n-form-item label="可见性">
-          <n-select v-model:value="form.visibility" :options="visibilityOptions" />
-        </n-form-item>
-        <n-form-item label="评论统一公布时间">
-          <n-date-picker v-model:value="commentPublishAt" type="datetime" clearable />
-        </n-form-item>
-      </div>
-      <div class="two-col">
-        <n-form-item label="查看权限组">
-          <n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" />
-        </n-form-item>
-        <n-form-item label="投票权限组">
-          <n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" />
-        </n-form-item>
-      </div>
-      <div class="two-col">
-        <n-form-item label="投票开始">
-          <n-date-picker v-model:value="voteStartsAt" type="datetime" clearable />
-        </n-form-item>
-        <n-form-item label="投票结束">
-          <n-date-picker v-model:value="voteEndsAt" type="datetime" clearable />
-        </n-form-item>
-      </div>
-      <n-space justify="end">
-        <n-button @click="router.push('/')">取消</n-button>
-        <n-button type="primary" :disabled="!form.title || !form.bodyMd" @click="submit">创建</n-button>
-      </n-space>
+      <n-card title="参与范围" size="large" class="form-card">
+        <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
+          <n-gi span="2 720:1"><n-form-item label="可见范围"><n-select v-model:value="form.visibility" :options="visibilityOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" :disabled="form.visibility !== 'groups'" placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+        </n-grid>
+        <n-alert type="info" :bordered="false">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-alert>
+      </n-card>
+
+      <n-card title="投票规则" size="large" class="form-card">
+        <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
+          <n-gi span="2 720:1"><n-form-item label="投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
+        </n-grid>
+        <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许修改自己的选择</n-checkbox></n-space>
+      </n-card>
+
+      <n-affix :bottom="0"><div class="form-actions"><n-space justify="end"><n-button @click="router.push('/')">取消</n-button><n-button type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>发布议题</n-button></n-space></div></n-affix>
     </n-form>
   </main>
 </template>
@@ -49,65 +38,44 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NButton, NDatePicker, NForm, NFormItem, NInput, NSelect, NSpace, useMessage } from 'naive-ui';
+import { AddCircleOutline } from '@vicons/ionicons5';
+import { NAffix, NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NSelect, NSpace, useMessage } from 'naive-ui';
+import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 
 const router = useRouter();
 const message = useMessage();
+const formRef = ref<FormInst | null>(null);
+const submitting = ref(false);
 const groupOptions = ref<Array<{ label: string; value: string }>>([]);
+const labelOptions = ref<Array<{ label: string; value: number }>>([]);
 const commentPublishAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
-const form = reactive({
-  title: '',
-  bodyMd: '',
-  visibility: 'login',
-  viewGroupKeys: [] as string[],
-  voteGroupKeys: ['council'] as string[],
-  voteVisibility: 'counts_after_close',
-  allowVoteChange: true,
-  passRule: 'simple_majority'
-});
-
-const visibilityOptions = [
-  { label: '公开可见', value: 'public' },
-  { label: '登录可见', value: 'login' },
-  { label: '权限组可见', value: 'groups' }
-];
+const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, passRule: 'simple_majority' });
+const rules: FormRules = { title: [{ required: true, message: '请填写议题标题', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
+const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
+const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
+const passRuleOptions = [{ label: '简单多数通过', value: 'simple_majority' }, { label: '三分之二多数通过', value: 'two_thirds' }, { label: '自定义规则', value: 'custom' }];
 
 async function submit() {
-  const detail = await apiPost<any>('/issues', {
-    ...form,
-    commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null,
-    voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
-    voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
-  });
-  message.success('议题已创建');
-  router.push(`/issues/${detail.issue.number}`);
+  await formRef.value?.validate();
+  submitting.value = true;
+  try {
+    const detail = await apiPost<any>('/issues', { ...form, commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null, voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null, voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null });
+    message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
+  } finally { submitting.value = false; }
 }
-
 onMounted(async () => {
-  const groups = await apiGet<Array<{ groupKey: string; name: string }>>('/admin/groups');
+  const [groups, labels] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/admin/groups'), apiGet<Array<{ id: number; name: string }>>('/labels')]);
   groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
+  labelOptions.value = labels.map((label) => ({ label: label.name, value: label.id }));
 });
 </script>
 
 <style scoped>
-.form-grid {
-  display: grid;
-  gap: 4px;
-}
-
-.two-col {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-@media (max-width: 720px) {
-  .two-col {
-    grid-template-columns: 1fr;
-  }
-}
+.form-page :deep(.n-form) { display: grid; gap: 20px; }
+.form-card { margin: 0; }
+.form-actions { display: flex; justify-content: flex-end; padding: 14px 0; background: rgba(246, 248, 251, 0.94); backdrop-filter: blur(10px); }
+@media (max-width: 480px) { .form-actions { justify-content: stretch; } .form-actions :deep(.n-space) { width: 100%; } .form-actions :deep(.n-button) { flex: 1; } }
 </style>
-

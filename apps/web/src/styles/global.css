@@ -1,221 +1,43 @@
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  color: #1f2937;
-  background: #f6f8fb;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.app-shell {
-  min-height: 100vh;
-}
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: 64px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(12px);
-}
-
-.topbar-inner {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  width: min(1120px, calc(100vw - 32px));
-  height: 100%;
-  margin: 0 auto;
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  font-size: 20px;
-  color: #111827;
-  white-space: nowrap;
-}
-
-.topnav {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.topnav a {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  height: 64px;
-}
-
-.topnav a.router-link-active::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 3px;
-  content: "";
-  background: #1677ff;
-  border-radius: 999px;
-}
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-left: auto;
-}
-
-.viewer-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #2f3b4a;
-  font-size: 16px;
-}
-
-.page {
-  padding: 40px 0;
-}
-
-.content-wrap {
-  width: min(1120px, calc(100vw - 32px));
-  margin: 0 auto;
-}
-
-.page-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 22px;
-}
-
-.page-title h1 {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.muted {
-  color: #667085;
-}
-
-.issue-row {
-  color: inherit;
-}
-
-.issue-row h3 {
-  margin: 0 0 7px;
-  color: #081226;
-  font-size: 22px;
-  font-weight: 650;
-  line-height: 1.25;
-}
-
-.tag-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 20px;
-}
-
-.panel {
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #e7ebf0;
-  border-radius: 8px;
-}
-
-.markdown-body {
-  line-height: 1.75;
-  white-space: pre-wrap;
-}
-
-.comment {
-  padding: 16px 0;
-  border-top: 1px solid #e7ebf0;
-}
-
-.comment-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.admin-grid {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 18px;
-}
-
+:root { color: #1f2937; background: #f6f8fb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { min-width: 320px; margin: 0; background: #f6f8fb; }
+a { color: inherit; text-decoration: none; }
+.app-shell { min-height: 100vh; background: #f6f8fb; }
+.topbar { position: sticky; top: 0; z-index: 20; height: 64px; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); }
+.topbar-inner { display: flex; align-items: center; gap: 28px; width: min(1200px, calc(100vw - 48px)); height: 100%; margin: 0 auto; }
+.brand { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 9px; color: #101828; font-size: 18px; font-weight: 700; white-space: nowrap; }
+.desktop-menu { flex: 1; min-width: 0; }
+.top-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.viewer-link { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; color: #344054; border-radius: 6px; }
+.viewer-link:hover { background: #f2f4f7; }
+.mobile-menu-button { display: none; }
+.page { padding: 32px 0 56px; }
+.content-wrap { width: min(1120px, calc(100vw - 48px)); margin: 0 auto; }
+.page-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.page-title h1 { margin: 0; color: #101828; font-size: 28px; font-weight: 650; line-height: 1.25; }
+.page-subtitle { margin: 7px 0 0; color: #667085; line-height: 1.55; }
+.muted { color: #667085; }
+.tag-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.side-stack { display: grid; gap: 16px; }
+.markdown-body { color: #344054; line-height: 1.8; white-space: pre-wrap; }
+.admin-grid { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 24px; align-items: start; }
+.admin-menu { position: sticky; top: 88px; }
 @media (max-width: 820px) {
-  .topbar {
-    height: 56px;
-  }
-
-  .topbar-inner {
-    width: calc(100vw - 24px);
-    gap: 12px;
-  }
-
-  .brand span,
-  .viewer-link span {
-    display: none;
-  }
-
-  .topnav {
-    gap: 10px;
-  }
-
-  .topnav a {
-    height: 56px;
-  }
-
-  .topnav a.router-link-active::after {
-    bottom: 0;
-  }
-
-  .page {
-    padding: 24px 0;
-  }
-
-  .content-wrap {
-    width: calc(100vw - 24px);
-  }
-
-  .page-title h1 {
-    font-size: 28px;
-  }
-
-  .detail-grid,
-  .admin-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .issue-row {
-    grid-template-columns: 1fr;
-  }
+  .topbar { height: 56px; }
+  .topbar-inner { width: calc(100vw - 24px); gap: 12px; }
+  .brand span, .viewer-link span { display: none; }
+  .desktop-menu { display: none !important; }
+  .top-actions { margin-left: auto; }
+  .mobile-menu-button { display: inline-flex; }
+  .page { padding: 24px 0 40px; }
+  .content-wrap { width: calc(100vw - 24px); }
+  .page-title { gap: 16px; margin-bottom: 20px; }
+  .page-title h1 { font-size: 24px; }
+  .detail-grid, .admin-grid { grid-template-columns: 1fr; }
+  .admin-menu { position: static; }
+}
+@media (max-width: 480px) {
+  .page-title { align-items: stretch; flex-direction: column; }
+  .page-title > .n-button { align-self: flex-start; }
 }
