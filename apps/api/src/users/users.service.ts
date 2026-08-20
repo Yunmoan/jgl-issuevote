@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../db/database.service';
 import { nowSql } from '../db/sql-time';
 import type { Viewer } from '../types';
@@ -53,6 +53,53 @@ export class UsersService {
     );
   }
 
+  async createGroup(input: { groupKey: string; name: string; description?: string | null; isAssignable: boolean }, actor: Viewer) {
+    this.requireAdmin(actor);
+    const now = nowSql();
+    try {
+      const result = await this.db.exec(
+        `INSERT INTO permission_groups (group_key, name, description, kind, is_assignable, created_at, updated_at)
+         VALUES (:groupKey, :name, :description, 'custom', :isAssignable, :now, :now)`,
+        { ...input, description: input.description || null, now }
+      );
+      await this.audit(actor.id, 'permission_group.create', 'permission_group', input.groupKey, input);
+      return { id: String(result.insertId), ...input, kind: 'custom' };
+    } catch (error: any) {
+      if (error?.code === 'ER_DUP_ENTRY') throw new ConflictException('权限组标识已存在');
+      throw error;
+    }
+  }
+
+  async updateGroup(groupKey: string, input: { name: string; description?: string | null; isAssignable: boolean }, actor: Viewer) {
+    this.requireAdmin(actor);
+    const row = await this.db.first(`SELECT kind FROM permission_groups WHERE group_key = :groupKey`, { groupKey });
+    if (!row) throw new ConflictException('权限组不存在');
+    if (row.kind !== 'custom') throw new ForbiddenException('系统权限组不可编辑');
+    await this.db.exec(
+      `UPDATE permission_groups SET name = :name, description = :description, is_assignable = :isAssignable, updated_at = :now WHERE group_key = :groupKey`,
+      { ...input, description: input.description || null, groupKey, now: nowSql() }
+    );
+    await this.audit(actor.id, 'permission_group.update', 'permission_group', groupKey, input);
+    return { ok: true };
+  }
+
+  async deleteGroup(groupKey: string, actor: Viewer) {
+    this.requireAdmin(actor);
+    const row = await this.db.first(`SELECT id, kind FROM permission_groups WHERE group_key = :groupKey`, { groupKey });
+    if (!row) throw new ConflictException('权限组不存在');
+    if (row.kind !== 'custom') throw new ForbiddenException('系统权限组不可删除');
+    const used = await this.db.first(
+      `SELECT 1 AS ok FROM user_group_memberships WHERE group_id = :groupId
+       UNION SELECT 1 AS ok FROM issue_view_groups WHERE group_id = :groupId
+       UNION SELECT 1 AS ok FROM issue_vote_groups WHERE group_id = :groupId LIMIT 1`,
+      { groupId: row.id }
+    );
+    if (used) throw new ConflictException('该权限组仍被成员或议题使用，无法删除');
+    await this.db.exec(`DELETE FROM permission_groups WHERE id = :groupId`, { groupId: row.id });
+    await this.audit(actor.id, 'permission_group.delete', 'permission_group', groupKey, {});
+    return { ok: true };
+  }
+
   async addGroup(userId: string, groupKey: string, actor: Viewer) {
     this.requireAdmin(actor);
     await this.db.exec(
@@ -98,10 +145,15 @@ export class UsersService {
 
   async publicSiteConfig() {
     const rows = await this.db.rows(
-      `SELECT setting_value FROM system_settings WHERE setting_key = 'site_name' LIMIT 1`
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility')`
     );
-    const value = rows[0] ? safeJson(rows[0].setting_value) : null;
-    return { siteName: typeof value === 'string' && value.trim() ? value.trim() : '冀高联议事' };
+    const values = Object.fromEntries(rows.map((row) => [row.setting_key, safeJson(row.setting_value)]));
+    return {
+      siteName: typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联议事',
+      siteDescription: typeof values.site_description === 'string' ? values.site_description : '',
+      siteNotice: typeof values.site_notice === 'string' ? values.site_notice : '',
+      defaultIssueVisibility: ['public', 'login', 'groups'].includes(String(values.default_issue_visibility)) ? values.default_issue_visibility : 'login'
+    };
   }
 
   async setSetting(key: string, value: unknown, actor: Viewer) {

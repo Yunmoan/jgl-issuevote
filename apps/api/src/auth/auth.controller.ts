@@ -28,9 +28,23 @@ export class AuthController {
     return { data: await this.auth.loginWithFeishuCode(parsed.code, res) };
   }
 
+  @Post('auth/feishu/bind-code')
+  async bindFeishuCode(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({ code: z.string().min(1) }).parse(body);
+    return { data: await this.auth.bindFeishuCode(parsed.code, viewer.id, res) };
+  }
+
   @Get('auth/natayarkid/start')
   async startNyk(@Res() res: Response) {
     const url = await this.auth.startNatayarkId(res);
+    res.redirect(url);
+  }
+
+  @Get('auth/natayarkid/link/start')
+  async startNykLink(@Req() req: Request, @Res() res: Response) {
+    const viewer = await this.auth.requireViewer(req);
+    const url = await this.auth.startNatayarkId(res, viewer.id);
     res.redirect(url);
   }
 

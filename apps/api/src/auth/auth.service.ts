@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import axios from 'axios';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -10,6 +10,7 @@ import type { Provider, Viewer } from '../types';
 
 const SESSION_COOKIE = 'jgl_session';
 const NYK_STATE_COOKIE = 'nyk_oauth_state';
+const NYK_LINK_USER_COOKIE = 'nyk_oauth_link_user';
 
 @Injectable()
 export class AuthService {
@@ -110,12 +111,14 @@ export class AuthService {
     return this.getViewer(String(userId));
   }
 
-  async startNatayarkId(res: Response) {
+  async startNatayarkId(res: Response, linkUserId?: string) {
     const clientId = requiredEnv('NYK_OAUTH_CLIENT_ID');
     const redirectUri = requiredEnv('NYK_OAUTH_REDIRECT_URI');
     const authorizationUrl = process.env.NYK_OAUTH_AUTHORIZATION_URL || 'https://account.naids.com/oauth2/authorize';
     const state = randomBytes(24).toString('hex');
     res.cookie(NYK_STATE_COOKIE, state, cookieOptions(10 * 60 * 1000));
+    if (linkUserId) res.cookie(NYK_LINK_USER_COOKIE, linkUserId, cookieOptions(10 * 60 * 1000));
+    else res.clearCookie(NYK_LINK_USER_COOKIE);
 
     const url = new URL(authorizationUrl);
     url.searchParams.set('response_type', 'code');
@@ -155,7 +158,7 @@ export class AuthService {
     const data = profileResponse.data?.data;
     if (!data?.id) throw new UnauthorizedException('NatayarkID 用户信息缺少 id');
 
-    const userId = await this.ensureUser({
+    const identity = {
       displayName: data.username || data.email || `NYK-${data.id}`,
       email: data.email || null,
       provider: 'natayarkid',
@@ -163,9 +166,12 @@ export class AuthService {
       providerUserId: String(data.id),
       groups: ['member'],
       rawProfile: profileResponse.data
-    });
+    } as const;
+    const linkUserId = req.cookies?.[NYK_LINK_USER_COOKIE] ? String(req.cookies[NYK_LINK_USER_COOKIE]) : null;
+    const userId = linkUserId ? await this.linkIdentity(linkUserId, identity) : await this.ensureUser(identity);
     this.setSession(res, String(userId));
     res.clearCookie(NYK_STATE_COOKIE);
+    res.clearCookie(NYK_LINK_USER_COOKIE);
     return this.getViewer(String(userId));
   }
 
@@ -173,6 +179,21 @@ export class AuthService {
     if (process.env.FEISHU_ENABLED !== 'true') {
       throw new UnauthorizedException('飞书登录未启用');
     }
+    const identity = await this.feishuIdentity(code);
+    const userId = await this.ensureUser(identity);
+    this.setSession(res, String(userId));
+    return this.getViewer(String(userId));
+  }
+
+  async bindFeishuCode(code: string, targetUserId: string, res: Response) {
+    const identity = await this.feishuIdentity(code);
+    const userId = await this.linkIdentity(targetUserId, identity);
+    this.setSession(res, String(userId));
+    return this.getViewer(String(userId));
+  }
+
+  private async feishuIdentity(code: string) {
+    if (process.env.FEISHU_ENABLED !== 'true') throw new UnauthorizedException('飞书登录未启用');
     const appId = requiredEnv('FEISHU_APP_ID');
     const appSecret = requiredEnv('FEISHU_APP_SECRET');
     const appTokenResponse = await axios.post('https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal', {
@@ -198,7 +219,7 @@ export class AuthService {
     if (!subject) throw new UnauthorizedException('飞书用户信息缺少稳定 ID');
 
     this.assertAllowedFeishuTenant(user?.tenant_key);
-    const userId = await this.ensureUser({
+    return {
       displayName: user.name || user.en_name || '飞书用户',
       email: user.email || null,
       avatarUrl: user.avatar_url || null,
@@ -210,9 +231,7 @@ export class AuthService {
       tenantKey: user.tenant_key || null,
       groups: ['member'],
       rawProfile: userResponse.data
-    });
-    this.setSession(res, String(userId));
-    return this.getViewer(String(userId));
+    } as const;
   }
 
   logout(res: Response) {
@@ -230,7 +249,7 @@ export class AuthService {
     openId?: string | null;
     unionId?: string | null;
     tenantKey?: string | null;
-    groups: string[];
+    groups: readonly string[];
     rawProfile: unknown;
   }) {
     const existing = await this.db.first(
@@ -300,6 +319,43 @@ export class AuthService {
       );
     }
     return userId;
+  }
+
+  private async linkIdentity(userId: string, input: {
+    displayName: string; email: string | null; avatarUrl?: string | null; provider: Provider; providerSubject: string;
+    providerUserId?: string | null; openId?: string | null; unionId?: string | null; tenantKey?: string | null; groups: readonly string[]; rawProfile: unknown;
+  }) {
+    await this.getViewer(userId);
+    const existing = await this.db.first(
+      `SELECT user_id FROM auth_identities WHERE provider = :provider AND provider_subject = :subject`,
+      { provider: input.provider, subject: input.providerSubject }
+    );
+    if (existing && String(existing.user_id) !== String(userId)) throw new ConflictException('该身份已绑定到其他账户');
+    const now = nowSql();
+    if (existing) {
+      await this.db.exec(
+        `UPDATE auth_identities SET email = :email, display_name = :displayName, avatar_url = :avatarUrl, raw_profile_json = :profile, last_used_at = :now
+         WHERE provider = :provider AND provider_subject = :subject`,
+        { provider: input.provider, subject: input.providerSubject, email: input.email, displayName: input.displayName, avatarUrl: input.avatarUrl || null, profile: JSON.stringify(input.rawProfile), now }
+      );
+    } else {
+      await this.db.exec(
+        `INSERT INTO auth_identities
+         (user_id, provider, provider_subject, tenant_key, open_id, union_id, provider_user_id, email, display_name, avatar_url, raw_profile_json, linked_at, last_used_at)
+         VALUES (:userId, :provider, :subject, :tenantKey, :openId, :unionId, :providerUserId, :email, :displayName, :avatarUrl, :profile, :now, :now)`,
+        { userId, provider: input.provider, subject: input.providerSubject, tenantKey: input.tenantKey || null, openId: input.openId || null, unionId: input.unionId || null, providerUserId: input.providerUserId || null, email: input.email, displayName: input.displayName, avatarUrl: input.avatarUrl || null, profile: JSON.stringify(input.rawProfile), now }
+      );
+    }
+    await this.audit(userId, 'identity.bind', 'auth_identity', `${input.provider}:${input.providerSubject}`, { provider: input.provider });
+    return userId;
+  }
+
+  private async audit(actorId: string, action: string, targetType: string, targetId: string, metadata: unknown) {
+    await this.db.exec(
+      `INSERT INTO audit_logs (actor_id, action, target_type, target_id, metadata_json, created_at)
+       VALUES (:actorId, :action, :targetType, :targetId, :metadata, :now)`,
+      { actorId, action, targetType, targetId, metadata: JSON.stringify(metadata), now: nowSql() }
+    );
   }
 
   private setSession(res: Response, userId: string) {

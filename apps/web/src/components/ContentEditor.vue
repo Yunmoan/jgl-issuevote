@@ -37,8 +37,8 @@ import { NButton, NCollapseTransition, NDivider, NIcon, NInput, NPopover, NRadio
 
 const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; minRows?: number }>(), { placeholder: '输入内容', minRows: 6 });
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
-const mode = ref<'markdown' | 'rich'>(looksLikeHtml(props.modelValue) ? 'rich' : 'markdown');
-const markdown = ref(mode.value === 'markdown' ? props.modelValue : htmlToMarkdown(props.modelValue));
+const mode = ref<'markdown' | 'rich'>('rich');
+const markdown = ref(htmlToMarkdown(props.modelValue));
 const editorRef = ref<HTMLDivElement | null>(null);
 const preview = ref(false);
 const imageUrl = ref('');
@@ -89,9 +89,10 @@ function htmlToMarkdown(value: string) {
 </script>
 
 <style scoped>
-.content-editor { display: grid; gap: 10px; }
+.content-editor { display: grid; width: 100%; min-width: 0; gap: 10px; }
 .editor-toolbar { min-height: 32px; }
-.rich-editor { min-height: 190px; padding: 12px; color: #344054; line-height: 1.75; border: 1px solid rgb(224, 224, 230); border-radius: 6px; outline: none; transition: border-color .2s ease, box-shadow .2s ease; }
+.content-editor :deep(.n-input) { width: 100%; }
+.rich-editor { width: 100%; min-height: 190px; padding: 12px; color: #344054; line-height: 1.75; border: 1px solid rgb(224, 224, 230); border-radius: 6px; outline: none; transition: border-color .2s ease, box-shadow .2s ease; }
 .rich-editor:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, .12); }
 .rich-editor :deep(img), .content-preview :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px; }
 .content-preview { min-height: 120px; padding: 14px; color: #344054; line-height: 1.8; background: #fafcff; border: 1px dashed #d0d5dd; border-radius: 6px; }

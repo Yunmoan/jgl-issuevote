@@ -69,9 +69,10 @@ async function submit() {
 }
 onMounted(async () => {
   try {
-    const [groups, labels] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels')]);
+    const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups' }>('/site-config')]);
     groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
     labelOptions.value = labels.map((label) => ({ label: label.name, value: label.id }));
+    form.visibility = config.defaultIssueVisibility;
   } catch {
     message.error('无法读取创建议题所需的权限配置，请确认已登录。');
   }

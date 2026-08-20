@@ -286,6 +286,19 @@ export class IssuesService {
     return this.getByNumber(number, viewer);
   }
 
+  async reopen(number: string, viewer: Viewer) {
+    this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
+    const detail = await this.getByNumber(number, viewer);
+    if (detail.issue.status !== 'closed') throw new ForbiddenException('只有已关闭的议题可以重新开启');
+    const now = nowSql();
+    await this.db.exec(
+      `UPDATE issues SET status = 'open', closed_by = NULL, closed_at = NULL, updated_at = :now WHERE id = :issueId`,
+      { now, issueId: detail.issue.id }
+    );
+    await this.audit(viewer.id, 'issue.reopen', 'issue', detail.issue.id, { number });
+    return this.getByNumber(number, viewer);
+  }
+
   async labels() {
     return this.db.rows(`SELECT id, name, color, description FROM labels ORDER BY name`);
   }

@@ -55,6 +55,12 @@ export class IssuesController {
     return { data: await this.issues.close(number, viewer) };
   }
 
+  @Post('issues/:number/reopen')
+  async reopen(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.reopen(number, viewer) };
+  }
+
   @Get('issues/:number/comments')
   async comments(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.viewerFromRequest(req);

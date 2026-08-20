@@ -3,6 +3,7 @@
     <div class="page-title">
       <div>
         <h1>议题</h1>
+        <p v-if="siteConfig.siteDescription" class="page-subtitle">{{ siteConfig.siteDescription }}</p>
       </div>
       <n-button v-if="session.canCreateIssue" type="primary" @click="router.push('/issues/new')">
         <template #icon>
@@ -14,6 +15,7 @@
     </div>
 
     <n-space vertical size="large">
+      <n-alert v-if="siteConfig.siteNotice" type="info" :bordered="false">{{ siteConfig.siteNotice }}</n-alert>
       <n-tabs v-model:value="statusKey" type="line" animated @update:value="handleStatusChange">
         <n-tab-pane v-for="tab in statusTabs" :key="tab.key" :name="tab.key">
           <template #tab>
@@ -95,7 +97,7 @@ import {
   SearchOutline,
   SyncOutline
 } from '@vicons/ionicons5';
-import { NButton, NCard, NEmpty, NIcon, NInput, NList, NListItem, NSpace, NSpin, NTabPane, NTabs, NTag, NThing } from 'naive-ui';
+import { NAlert, NButton, NCard, NEmpty, NIcon, NInput, NList, NListItem, NSpace, NSpin, NTabPane, NTabs, NTag, NThing } from 'naive-ui';
 import { apiGet } from '../api';
 import { useSessionStore } from '../stores/session';
 
@@ -117,6 +119,7 @@ const issues = ref<IssueRow[]>([]);
 const loading = ref(false);
 const q = ref('');
 const statusKey = ref('all');
+const siteConfig = ref({ siteDescription: '', siteNotice: '' });
 
 const statusTabs = [
   { key: 'all', label: '全部', value: null, icon: ListOutline, color: '#344054' },
@@ -142,6 +145,10 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadSiteConfig() {
+  try { siteConfig.value = await apiGet<{ siteDescription: string; siteNotice: string }>('/site-config'); } catch { /* Optional public site configuration. */ }
 }
 
 function statusMeta(value: string) {
@@ -171,7 +178,7 @@ function relativeTime(value: string) {
 }
 
 watch(() => session.viewer?.id, () => load());
-onMounted(load);
+onMounted(() => { load(); loadSiteConfig(); });
 </script>
 
 <style scoped>

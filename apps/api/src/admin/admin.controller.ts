@@ -45,6 +45,26 @@ export class AdminController {
     return { data: await this.users.groups() };
   }
 
+  @Post('groups')
+  async createGroup(@Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = groupSchema.parse(body);
+    return { data: await this.users.createGroup(parsed, viewer) };
+  }
+
+  @Patch('groups/:groupKey')
+  async updateGroup(@Param('groupKey') groupKey: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = groupUpdateSchema.parse(body);
+    return { data: await this.users.updateGroup(groupKey, parsed, viewer) };
+  }
+
+  @Delete('groups/:groupKey')
+  async deleteGroup(@Param('groupKey') groupKey: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.users.deleteGroup(groupKey, viewer) };
+  }
+
   @Get('settings')
   async settings(@Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
@@ -66,3 +86,11 @@ export class AdminController {
     return { data: await this.users.auditLogs() };
   }
 }
+
+const groupSchema = z.object({
+  groupKey: z.string().regex(/^[a-z][a-z0-9_]{1,79}$/),
+  name: z.string().min(1).max(80),
+  description: z.string().max(300).nullable().optional(),
+  isAssignable: z.boolean().default(true)
+});
+const groupUpdateSchema = groupSchema.omit({ groupKey: true });

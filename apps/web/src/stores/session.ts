@@ -46,14 +46,18 @@ export const useSessionStore = defineStore('session', {
     loginWithNatayarkId() {
       window.location.href = authStartUrl('natayarkid');
     },
+    linkNatayarkId() {
+      window.location.href = authStartUrl('natayarkid', 'link');
+    },
     async autoLoginWithFeishu() {
       const feishu = this.providers?.feishu;
-      if (this.viewer || !feishu?.enabled || !feishu.autoLogin || !feishu.appId || !isFeishuContainer() || feishuAutoLoginAttempted) return;
+      if (!feishu?.enabled || !feishu.autoLogin || !feishu.appId || !isFeishuContainer() || feishuAutoLoginAttempted) return;
+      if (this.viewer?.boundProviders.includes('feishu')) return;
       feishuAutoLoginAttempted = true;
       try {
         await loadFeishuSdk(feishu.sdkUrl);
         const code = await requestFeishuAuthCode(feishu.appId);
-        if (code) this.viewer = await apiPost<Viewer>('/auth/feishu/code', { code });
+        if (code) this.viewer = await apiPost<Viewer>(this.viewer ? '/auth/feishu/bind-code' : '/auth/feishu/code', { code });
       } catch {
         // Outside the Feishu container the SDK may be unavailable; keep the page usable.
       }

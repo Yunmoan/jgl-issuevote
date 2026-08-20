@@ -33,6 +33,6 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   return payload.data as T;
 }
 
-export function authStartUrl(provider: 'natayarkid') {
-  return `${API_BASE}/auth/${provider}/start`;
+export function authStartUrl(provider: 'natayarkid', mode: 'login' | 'link' = 'login') {
+  return `${API_BASE}/auth/${provider}${mode === 'link' ? '/link' : ''}/start`;
 }

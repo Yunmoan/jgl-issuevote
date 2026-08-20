@@ -17,8 +17,8 @@
               <n-tag v-for="label in detail.issue.labels" :key="label.id" :color="{ color: `${label.color}1a`, textColor: label.color }">{{ label.name }}</n-tag>
             </n-space>
           </div>
-          <n-button v-if="detail.viewer.canEdit && detail.issue.status !== 'closed'" secondary @click="closeIssue">
-            <template #icon><n-icon><LockClosedOutline /></n-icon></template>关闭议题
+          <n-button v-if="detail.viewer.canEdit && detail.issue.status !== 'archived'" :type="detail.issue.status === 'closed' ? 'primary' : 'default'" secondary @click="confirmIssueStatus">
+            <template #icon><n-icon><component :is="detail.issue.status === 'closed' ? RefreshOutline : LockClosedOutline" /></n-icon></template>{{ detail.issue.status === 'closed' ? '重新开启' : '关闭议题' }}
           </n-button>
         </div>
 
@@ -52,10 +52,10 @@
               <n-empty v-if="comments.length === 0" description="暂无已公开意见" size="small" class="empty-comments" />
               <n-list v-else :show-divider="true">
                 <n-list-item v-for="comment in comments" :key="comment.id">
-                  <n-thing :title="comment.author.displayName">
-                    <template #description>
-                      <n-space :size="8"><span>{{ formatTime(comment.createdAt) }}</span><n-tag v-if="!comment.published" size="small" type="warning">待统一公布</n-tag></n-space>
-                    </template>
+                  <template #prefix><n-avatar round :size="32">{{ comment.author.displayName.slice(0, 1) }}</n-avatar></template>
+                  <n-thing>
+                    <template #header><n-text strong>{{ comment.author.displayName }}</n-text></template>
+                    <template #header-extra><n-space :size="8" align="center"><n-text depth="3" class="comment-time">{{ formatTime(comment.createdAt) }}</n-text><n-tag v-if="!comment.published" size="small" type="warning">待统一公布</n-tag></n-space></template>
                     <div class="comment-content rendered-content" v-html="renderContent(comment.bodyMd)" />
                   </n-thing>
                 </n-list-item>
@@ -71,7 +71,7 @@
 
           <aside class="side-stack">
             <n-card title="议题信息" size="small">
-              <n-descriptions label-placement="top" :column="2" size="small" bordered>
+              <n-descriptions label-placement="left" :column="2" size="small" bordered>
                 <n-descriptions-item label="创建人">{{ detail.issue.createdByName }}</n-descriptions-item>
                 <n-descriptions-item label="意见公布">{{ detail.issue.commentPublishAt ? formatTime(detail.issue.commentPublishAt) : '即时公布' }}</n-descriptions-item>
                 <n-descriptions-item label="查看权限">{{ groupNames(detail.issue.viewGroups) || '按可见性' }}</n-descriptions-item>
@@ -88,16 +88,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { BarChartOutline, LockClosedOutline, SendOutline } from '@vicons/ionicons5';
+import { BarChartOutline, LockClosedOutline, RefreshOutline, SendOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { NAlert, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NList, NListItem, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useMessage } from 'naive-ui';
+import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NList, NListItem, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, useDialog, useMessage } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const dialog = useDialog();
 const loading = ref(false);
 const detail = ref<any>(null);
 const comments = ref<any[]>([]);
@@ -108,7 +109,17 @@ const errorMessage = ref('');
 async function load() { loading.value = true; errorMessage.value = ''; try { detail.value = await apiGet(`/issues/${route.params.number}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); choice.value = detail.value.myVote?.choice || null; } catch (error) { detail.value = null; errorMessage.value = error instanceof Error ? error.message : '议题不存在或当前账号没有查看权限。'; } finally { loading.value = false; } }
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = detail.value.myVote?.choice || choice.value; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
-async function closeIssue() { detail.value = await apiPost(`/issues/${route.params.number}/close`); message.success('议题已关闭'); }
+function confirmIssueStatus() {
+  const reopening = detail.value.issue.status === 'closed';
+  dialog.warning({
+    title: reopening ? '重新开启议题' : '关闭议题',
+    content: reopening ? '重新开启后，符合权限的成员可继续讨论和投票。' : '关闭后将停止投票，结果会按议题规则公布。',
+    positiveText: reopening ? '确认重新开启' : '确认关闭',
+    negativeText: '取消',
+    onPositiveClick: () => updateIssueStatus(reopening)
+  });
+}
+async function updateIssueStatus(reopening: boolean) { try { detail.value = await apiPost(`/issues/${route.params.number}/${reopening ? 'reopen' : 'close'}`); message.success(reopening ? '议题已重新开启' : '议题已关闭'); } catch (error) { message.error(error instanceof Error ? error.message : '操作失败'); return false; } }
 function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim().length > 0; }
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }
 function statusText(value: string) { return { open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
@@ -124,7 +135,8 @@ onMounted(load);
 .issue-tags { margin-top: 12px; }
 .detail-main { display: grid; gap: 20px; }
 .comments-card { margin-top: 0; }
-.comment-content { margin-top: 10px; color: #344054; line-height: 1.75; white-space: pre-wrap; }
+.comment-content { margin-top: 6px; color: #344054; line-height: 1.75; white-space: pre-wrap; }
+.comment-time { white-space: nowrap; font-size: 13px; }
 .comment-form { display: grid; gap: 4px; }
 .empty-comments { padding: 28px 0; }
 .vote-options { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; }
