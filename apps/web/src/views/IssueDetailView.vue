@@ -12,7 +12,7 @@
               <h1>{{ detail.issue.title }}</h1>
             </n-space>
             <n-space class="issue-tags" :size="6">
-              <n-tag :type="detail.issue.status === 'closed' ? 'default' : 'success'">{{ statusText(detail.issue.status)
+              <n-tag :type="issueStatusTagType(detail.issue.status)">{{ statusText(detail.issue.status)
                 }}</n-tag>
               <n-tag v-if="detail.issue.outcome !== 'pending'" :type="outcomeTagType(detail.issue.outcome)" :bordered="false">{{ outcomeText(detail.issue.outcome) }}</n-tag>
               <n-tag :bordered="false">{{ visibilityText(detail.issue.visibility) }}</n-tag>
@@ -42,6 +42,8 @@
                   <ArchiveOutline />
                 </n-icon></template>归档</n-button></n-space>
         </div>
+        <n-alert v-if="detail.issue.status === 'pending_review'" type="warning" :bordered="false">该议题正在等待预审，暂不会出现在正式议题列表。</n-alert>
+        <n-alert v-else-if="detail.issue.status === 'review_rejected'" type="error" :bordered="false">预审未通过：{{ detail.issue.reviewNote || '未填写原因' }}。修改后保存即可重新提交预审。</n-alert>
 
         <div class="detail-grid">
           <section class="detail-main">
@@ -142,6 +144,8 @@
               <n-descriptions label-placement="left" :column="1" size="small" bordered>
                 <n-descriptions-item label="创建人">{{ detail.issue.createdByName }}</n-descriptions-item>
                 <n-descriptions-item label="议题状态">{{ statusText(detail.issue.status) }}</n-descriptions-item>
+                <n-descriptions-item v-if="detail.issue.reviewedAt" label="预审结果">{{ detail.issue.reviewedByName || '成员' }} · {{ formatTime(detail.issue.reviewedAt) }}</n-descriptions-item>
+                <n-descriptions-item v-if="detail.issue.reviewNote" label="预审说明">{{ detail.issue.reviewNote }}</n-descriptions-item>
                 <n-descriptions-item label="议题结果"><n-tag size="small" :type="outcomeTagType(detail.issue.outcome)" :bordered="false">{{ outcomeText(detail.issue.outcome) }}</n-tag></n-descriptions-item>
                 <n-descriptions-item v-if="detail.issue.outcomeConfirmedAt" label="结果确认">{{ detail.issue.outcomeConfirmedByName || '管理员' }} · {{ formatTime(detail.issue.outcomeConfirmedAt) }}</n-descriptions-item>
                 <n-descriptions-item label="投票器">{{ detail.issue.votingEnabled ? '已启用' : '未启用（纯讨论）' }}</n-descriptions-item>
@@ -362,7 +366,8 @@ function toPickerValue(value: string | null) { return value ? new Date(value).ge
 function toIso(value: number | null) { return value ? new Date(value).toISOString() : null; }
 function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim().length > 0; }
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }
-function statusText(value: string) { return { open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
+function statusText(value: string) { return { pending_review: '待预审', review_rejected: '预审驳回', open: '开放', voting: '投票中', closed: '已关闭', archived: '已归档', draft: '草稿' }[value] || value; }
+function issueStatusTagType(value: string): 'success' | 'warning' | 'error' | 'default' { return { pending_review: 'warning', review_rejected: 'error', open: 'success', voting: 'warning', closed: 'default', archived: 'default', draft: 'default' }[value] as 'success' | 'warning' | 'error' | 'default' || 'default'; }
 function outcomeText(value: string) { return { pending: '结果待定', passed: '已通过', rejected: '未通过', manual_required: '等待人工确认', not_applicable: '不适用投票' }[value] || value; }
 function outcomeTagType(value: string): 'success' | 'error' | 'warning' | 'default' { return { passed: 'success', rejected: 'error', manual_required: 'warning', not_applicable: 'default', pending: 'default' }[value] as 'success' | 'error' | 'warning' | 'default' || 'default'; }
 function visibilityText(value: string) { return { public: '公开可见', login: '登录可见', groups: '群组可见' }[value] || value; }

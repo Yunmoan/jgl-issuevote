@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { CheckmarkCircleOutline, CreateOutline, DesktopOutline, DocumentTextOutline, LogInOutline, MenuOutline, MoonOutline, PersonOutline, SettingsOutline, SunnyOutline } from '@vicons/ionicons5';
+import { CheckmarkCircleOutline, ClipboardOutline, CreateOutline, DesktopOutline, DocumentTextOutline, LogInOutline, MenuOutline, MoonOutline, PersonOutline, SettingsOutline, SunnyOutline } from '@vicons/ionicons5';
 import { darkTheme, dateZhCN, NAvatar, NButton, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NSkeleton, NTooltip, NWatermark, zhCN } from 'naive-ui';
 import type { MenuOption } from 'naive-ui';
 import { apiGet } from './api';
@@ -85,11 +85,12 @@ function icon(component: any) { return () => h(NIcon, null, { default: () => h(c
 const menuOptions = computed<MenuOption[]>(() => {
   const options: MenuOption[] = [{ label: '议题', key: '/', icon: icon(DocumentTextOutline) }];
   if (session.canCreateIssue) options.push({ label: '创建议题', key: '/issues/new', icon: icon(CreateOutline) });
+  if (session.canReviewIssueSubmissions) options.push({ label: '预审', key: '/reviews', icon: icon(ClipboardOutline) });
   if (session.isAdmin) options.push({ label: '管理', key: '/admin', icon: icon(SettingsOutline) });
   if (session.viewer) options.push({ label: '个人中心', key: '/me', icon: icon(PersonOutline) });
   return options;
 });
-const activeKey = computed(() => route.path.startsWith('/issues/new') ? '/issues/new' : route.path.startsWith('/admin') ? '/admin' : route.path.startsWith('/me') ? '/me' : '/');
+const activeKey = computed(() => route.path.startsWith('/issues/new') ? '/issues/new' : route.path.startsWith('/reviews') ? '/reviews' : route.path.startsWith('/admin') ? '/admin' : route.path.startsWith('/me') ? '/me' : '/');
 
 function navigate(key: string) { showMobileNav.value = false; router.push(key); }
 function setTheme(value: ThemePreference) { themePreference.value = value; localStorage.setItem('jgl-theme-preference', value); }

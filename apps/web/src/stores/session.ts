@@ -23,7 +23,9 @@ export const useSessionStore = defineStore('session', {
   }),
   getters: {
     isAdmin: (state) => Boolean(state.viewer?.groups.includes('admin')),
-    canCreateIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['admin', 'issue_creator'].includes(group)))
+    canCreateIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group))),
+    canPublishIssue: (state) => Boolean(state.viewer?.groups.some((group) => ['admin', 'issue_creator'].includes(group))),
+    canReviewIssueSubmissions: (state) => Boolean(state.viewer?.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group)))
   },
   actions: {
     async load() {

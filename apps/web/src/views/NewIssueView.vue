@@ -1,13 +1,14 @@
 <template>
   <main class="content-wrap form-page">
     <div class="page-title">
-      <div><h1>创建议题</h1><p class="page-subtitle">清晰说明议题，并设置讨论与表决的参与范围。</p></div>
+      <div><h1>{{ session.canPublishIssue ? '创建议题' : '提交议题' }}</h1><p class="page-subtitle">清晰说明议题，并设置讨论与表决的参与范围。</p></div>
     </div>
     <n-steps :current="currentStep" size="small" class="issue-steps">
       <n-step title="基本信息" />
       <n-step title="参与范围" />
       <n-step title="投票规则" />
     </n-steps>
+    <n-alert v-if="!session.canPublishIssue" type="info" :bordered="false">提交后将进入预审，普通成员或更高权限的其他成员通过后才会公开。</n-alert>
     <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
       <n-card v-show="currentStep === 1" title="基本信息" size="large">
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>
@@ -54,7 +55,7 @@
           <n-button v-if="currentStep === 1" @click="router.push('/')">取消</n-button>
           <n-button v-else @click="currentStep -= 1"><template #icon><n-icon><ArrowBackOutline /></n-icon></template>上一步</n-button>
           <n-button v-if="currentStep < 3" type="primary" @click="nextStep">下一步<template #icon><n-icon><ArrowForwardOutline /></n-icon></template></n-button>
-          <n-button v-else type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>发布议题</n-button>
+          <n-button v-else type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>{{ session.canPublishIssue ? '发布议题' : '提交预审' }}</n-button>
         </n-space>
       </n-card>
     </n-form>
@@ -115,7 +116,7 @@ async function submit() {
       voteStartsAt: form.votingEnabled && voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
       voteEndsAt: form.votingEnabled && voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
     });
-    message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
+    message.success(session.canPublishIssue ? '议题已发布' : '议题已提交，等待预审'); router.push(`/issues/${detail.issue.number}`);
   } catch (error) {
     message.error(error instanceof Error ? `发布失败：${error.message}` : '发布失败，请稍后重试');
   } finally { submitting.value = false; }

@@ -61,6 +61,26 @@ export class IssuesController {
     return { data: await this.issues.create(input, viewer) };
   }
 
+  @Get('issues/reviews')
+  async reviewQueue(@Query() query: Record<string, unknown>, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.reviewQueue(query, viewer) };
+  }
+
+  @Post('issues/:number/review')
+  async review(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({
+      decision: z.enum(['approve', 'reject']),
+      note: z.string().trim().max(1000).optional()
+    }).superRefine((value, context) => {
+      if (value.decision === 'reject' && !value.note) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['note'], message: '驳回时请说明原因' });
+      }
+    }).parse(body);
+    return { data: await this.issues.review(number, parsed.decision, parsed.note || null, viewer) };
+  }
+
   @Get('issues/:number')
   async detail(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.viewerFromRequest(req);

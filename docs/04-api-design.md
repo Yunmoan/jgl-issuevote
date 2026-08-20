@@ -88,6 +88,8 @@ GET  /api/me
 ```http
 GET    /api/issues
 POST   /api/issues
+GET    /api/issues/reviews
+POST   /api/issues/:number/review
 GET    /api/issues/:number
 PATCH  /api/issues/:number
 POST   /api/issues/:number/close

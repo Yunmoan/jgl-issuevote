@@ -4,15 +4,16 @@ import IssueListView from './views/IssueListView.vue';
 import NewIssueView from './views/NewIssueView.vue';
 import AdminView from './views/AdminView.vue';
 import ProfileView from './views/ProfileView.vue';
+import IssueReviewView from './views/IssueReviewView.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: IssueListView },
     { path: '/issues/new', component: NewIssueView },
+    { path: '/reviews', component: IssueReviewView },
     { path: '/issues/:number', component: IssueDetailView },
     { path: '/me', component: ProfileView },
     { path: '/admin', component: AdminView }
   ]
 });
-

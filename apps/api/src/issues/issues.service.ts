@@ -62,7 +62,7 @@ export class IssuesService implements OnModuleInit {
 
   async list(query: Record<string, unknown>, viewer: Viewer | null) {
     await this.syncVotingLifecycle();
-    const conditions = [`i.status <> 'draft'`];
+    const conditions = [`i.status NOT IN ('draft', 'pending_review', 'review_rejected')`];
     const params: Record<string, unknown> = {};
 
     if (query.status) {
@@ -137,10 +137,11 @@ export class IssuesService implements OnModuleInit {
   }
 
   async create(input: z.infer<typeof createIssueSchema>, viewer: Viewer) {
-    this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
+    this.requireIssueSubmitter(viewer);
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
-    const status = this.initialStatus(input);
+    const requiresReview = !this.canPublishIssue(viewer);
+    const status = requiresReview ? 'pending_review' : this.initialStatus(input);
     const outcome: IssueOutcome = input.votingEnabled ? 'pending' : 'not_applicable';
     const next = await this.db.first(`SELECT COALESCE(MAX(number), 0) + 1 AS next_number FROM issues`);
     const result = await this.db.exec(
@@ -177,17 +178,80 @@ export class IssuesService implements OnModuleInit {
     await this.replaceLabels(issueId, input.labelIds);
     await this.replaceIssueGroups('issue_view_groups', issueId, input.viewGroupKeys);
     await this.replaceIssueGroups('issue_vote_groups', issueId, input.voteGroupKeys);
-    await this.audit(viewer.id, 'issue.create', 'issue', String(issueId), { number: next.next_number });
+    await this.audit(viewer.id, requiresReview ? 'issue.submit' : 'issue.create', 'issue', String(issueId), { number: next.next_number });
     return this.getByNumber(String(next.next_number), viewer);
+  }
+
+  async reviewQueue(query: Record<string, unknown>, viewer: Viewer) {
+    this.requireIssueReviewer(viewer);
+    const params: Record<string, unknown> = {};
+    const conditions = [`i.status = 'pending_review'`];
+    if (query.q) {
+      conditions.push('(i.title LIKE :q OR i.body_md LIKE :q)');
+      params.q = `%${String(query.q)}%`;
+    }
+    const rows = await this.db.rows(
+      `SELECT i.id, i.number, i.title, i.body_md, i.visibility, i.voting_enabled, i.created_by, i.created_at, i.updated_at,
+              u.display_name AS created_by_name
+       FROM issues i
+       JOIN users u ON u.id = i.created_by
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY i.created_at ASC
+       LIMIT 100`,
+      params
+    );
+    const labels = await this.labelsForIssues(rows.map((row) => row.id));
+    return rows.map((row) => ({
+      number: Number(row.number),
+      title: row.title,
+      bodyMd: row.body_md,
+      visibility: row.visibility,
+      votingEnabled: Boolean(row.voting_enabled),
+      createdByName: row.created_by_name,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      canReview: String(row.created_by) !== viewer.id,
+      labels: labels.get(String(row.id)) || []
+    }));
+  }
+
+  async review(number: string, decision: 'approve' | 'reject', note: string | null, viewer: Viewer) {
+    this.requireIssueReviewer(viewer);
+    const issue = await this.db.first(`SELECT * FROM issues WHERE number = :number`, { number });
+    if (!issue) throw new NotFoundException('待预审议题不存在');
+    if (issue.status !== 'pending_review') throw new ForbiddenException('该议题不在待预审状态');
+    if (String(issue.created_by) === viewer.id) throw new ForbiddenException('不能预审自己提交的议题');
+
+    const approved = decision === 'approve';
+    const now = nowSql();
+    await this.db.exec(
+      `UPDATE issues
+       SET status = :status, reviewed_by = :reviewedBy, reviewed_at = :now, review_note = :reviewNote, updated_at = :now
+       WHERE id = :issueId`,
+      {
+        status: approved ? 'open' : 'review_rejected',
+        reviewedBy: viewer.id,
+        reviewNote: note,
+        now,
+        issueId: issue.id
+      }
+    );
+    await this.audit(viewer.id, approved ? 'issue.review_approve' : 'issue.review_reject', 'issue', String(issue.id), {
+      number: Number(issue.number),
+      note
+    });
+    return { number: Number(issue.number), status: approved ? 'open' : 'review_rejected' };
   }
 
   async getByNumber(number: string, viewer: Viewer | null) {
     await this.syncVotingLifecycle();
     const issue = await this.db.first(
-      `SELECT i.*, u.display_name AS created_by_name, outcome_user.display_name AS outcome_confirmed_by_name
+      `SELECT i.*, u.display_name AS created_by_name, outcome_user.display_name AS outcome_confirmed_by_name,
+              review_user.display_name AS reviewed_by_name
        FROM issues i
        JOIN users u ON u.id = i.created_by
        LEFT JOIN users outcome_user ON outcome_user.id = i.outcome_confirmed_by
+       LEFT JOIN users review_user ON review_user.id = i.reviewed_by
        WHERE i.number = :number`,
       { number }
     );
@@ -239,6 +303,9 @@ export class IssuesService implements OnModuleInit {
         outcome: issue.outcome,
         outcomeConfirmedByName: issue.outcome_confirmed_by_name,
         outcomeConfirmedAt: issue.outcome_confirmed_at,
+        reviewedByName: issue.reviewed_by_name,
+        reviewedAt: issue.reviewed_at,
+        reviewNote: issue.review_note,
         createdByName: issue.created_by_name,
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
@@ -495,7 +562,8 @@ export class IssuesService implements OnModuleInit {
     if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
-    const status = this.updatedStatus(detail.issue.status, input);
+    const resubmitting = detail.issue.status === 'review_rejected' && !this.canPublishIssue(viewer);
+    const status = resubmitting ? 'pending_review' : this.updatedStatus(detail.issue.status, input);
     const outcome = !input.votingEnabled ? 'not_applicable' : detail.issue.status === 'closed' && input.passRule === 'custom' ? 'manual_required' : detail.issue.outcome;
     await this.db.exec(
       `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
@@ -504,6 +572,9 @@ export class IssuesService implements OnModuleInit {
        quorum_count = :quorumCount, pass_rule = :passRule, custom_pass_rule_json = :customPassRule, status = :status, outcome = :outcome,
        outcome_confirmed_by = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_by ELSE NULL END,
        outcome_confirmed_at = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_at ELSE NULL END,
+       reviewed_by = CASE WHEN :status = 'pending_review' THEN NULL ELSE reviewed_by END,
+       reviewed_at = CASE WHEN :status = 'pending_review' THEN NULL ELSE reviewed_at END,
+       review_note = CASE WHEN :status = 'pending_review' THEN NULL ELSE review_note END,
        content_edited_at = :now, updated_at = :now
        WHERE id = :issueId`,
       { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), votingEnabled: input.votingEnabled, voteStartsAt: toSqlDate(input.votingEnabled ? input.voteStartsAt || null : null), voteEndsAt: toSqlDate(input.votingEnabled ? input.voteEndsAt || null : null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, customPassRule: input.passRule === 'custom' ? JSON.stringify({ description: input.customPassRule }) : null, status, outcome, now, issueId: detail.issue.id }
@@ -511,7 +582,7 @@ export class IssuesService implements OnModuleInit {
     await this.replaceLabels(detail.issue.id, input.labelIds);
     await this.replaceIssueGroups('issue_view_groups', detail.issue.id, input.viewGroupKeys);
     await this.replaceIssueGroups('issue_vote_groups', detail.issue.id, input.voteGroupKeys);
-    await this.audit(viewer.id, 'issue.edit', 'issue', detail.issue.id, { number });
+    await this.audit(viewer.id, resubmitting ? 'issue.resubmit' : 'issue.edit', 'issue', detail.issue.id, { number });
     return this.getByNumber(number, viewer);
   }
 
@@ -723,6 +794,12 @@ export class IssuesService implements OnModuleInit {
 
   private async canViewIssue(issue: any, viewer: Viewer | null) {
     if (viewer?.groups.includes('admin')) return true;
+    if (issue.status === 'pending_review') {
+      return Boolean(viewer && (String(issue.created_by) === viewer.id || this.canReviewIssueSubmissions(viewer)));
+    }
+    if (issue.status === 'review_rejected') {
+      return Boolean(viewer && (String(issue.created_by) === viewer.id || String(issue.reviewed_by) === viewer.id));
+    }
     if (issue.visibility === 'public') return true;
     if (!viewer) return false;
     if (issue.visibility === 'login') return true;
@@ -854,6 +931,22 @@ export class IssuesService implements OnModuleInit {
     if (!groups.some((group) => viewer.groups.includes(group))) {
       throw new ForbiddenException('权限不足');
     }
+  }
+
+  private canPublishIssue(viewer: Viewer) {
+    return viewer.groups.some((group) => ['admin', 'issue_creator'].includes(group));
+  }
+
+  private canReviewIssueSubmissions(viewer: Viewer) {
+    return viewer.groups.some((group) => ['member', 'council', 'issue_creator', 'admin', 'auditor'].includes(group));
+  }
+
+  private requireIssueSubmitter(viewer: Viewer) {
+    if (!this.canReviewIssueSubmissions(viewer)) throw new ForbiddenException('需要普通成员或更高权限才能提交议题');
+  }
+
+  private requireIssueReviewer(viewer: Viewer) {
+    if (!this.canReviewIssueSubmissions(viewer)) throw new ForbiddenException('需要普通成员或更高权限才能预审议题');
   }
 
   private requireAdmin(viewer: Viewer) {
