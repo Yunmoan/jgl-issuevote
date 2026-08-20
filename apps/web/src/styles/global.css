@@ -36,7 +36,9 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 980px) {
   .topbar { height: 56px; }
   .topbar-inner { width: calc(100vw - 24px); gap: 12px; }
-  .brand span, .viewer-link span { display: none; }
+  .brand { flex: 0 1 auto; min-width: 0; }
+  .brand span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .viewer-link span { display: none; }
   .desktop-menu { display: none !important; }
   .top-actions { margin-left: auto; }
   .mobile-menu-button { display: inline-flex; }

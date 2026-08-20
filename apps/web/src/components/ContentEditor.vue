@@ -1,7 +1,7 @@
 <template>
   <div class="content-editor">
     <n-space class="editor-toolbar" :size="4" :wrap="true" align="center">
-      <n-radio-group key="editor-mode" v-model:value="mode" size="small" @update:value="changeMode">
+      <n-radio-group key="editor-mode" :value="mode" size="small" @update:value="changeMode">
         <n-radio-button value="markdown">Markdown</n-radio-button>
         <n-radio-button value="rich">富文本</n-radio-button>
       </n-radio-group>
@@ -45,9 +45,9 @@ import { apiUploadImage, assetUrl } from '../api';
 
 const props = withDefaults(defineProps<{ modelValue: string; placeholder?: string; minRows?: number }>(), { placeholder: '输入内容', minRows: 6 });
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
-const mode = ref<'markdown' | 'rich'>('rich');
+const mode = ref<'markdown' | 'rich'>(initialMode(props.modelValue));
 const message = useMessage();
-const markdown = ref(htmlToMarkdown(props.modelValue));
+const markdown = ref(mode.value === 'markdown' ? props.modelValue : htmlToMarkdown(props.modelValue));
 const editorRef = ref<HTMLDivElement | null>(null);
 const imageInputRef = ref<HTMLInputElement | null>(null);
 const preview = ref(false);
@@ -63,22 +63,34 @@ const richTools = [
 const blockOptions = [{ label: '子标题', key: 'h2' }, { label: '小标题', key: 'h3' }, { label: '正文', key: 'p' }, { label: '代码块', key: 'pre' }];
 const renderedContent = computed(() => renderContent(mode.value === 'markdown' ? markdown.value : props.modelValue));
 
-watch(() => props.modelValue, (value) => {
-  if (mode.value === 'markdown' && value !== markdown.value) markdown.value = value;
-  if (mode.value === 'rich' && editorRef.value && value !== editorRef.value.innerHTML) syncRichEditor(value);
+watch(() => props.modelValue, async (value) => {
+  if (mode.value === 'markdown') {
+    if (value !== markdown.value) markdown.value = value;
+    return;
+  }
+  await nextTick();
+  if (editorRef.value && value !== editorRef.value.innerHTML) syncRichEditor(value);
 });
 watch(preview, async (isPreview) => { if (!isPreview && mode.value === 'rich') { await nextTick(); syncRichEditor(props.modelValue); } });
-onMounted(() => syncRichEditor(mode.value === 'rich' ? props.modelValue : markdownToHtml(markdown.value)));
+onMounted(async () => { if (mode.value === 'rich') { await nextTick(); syncRichEditor(props.modelValue); } });
 
-function changeMode(next: 'markdown' | 'rich') {
-  if (next === 'rich') {
-    const html = markdownToHtml(markdown.value);
-    emit('update:modelValue', html);
-    nextTick(() => syncRichEditor(html));
-  } else {
-    markdown.value = htmlToMarkdown(props.modelValue);
+async function changeMode(next: 'markdown' | 'rich') {
+  if (next === mode.value) return;
+  if (next === 'markdown') {
+    const html = editorRef.value?.innerHTML ?? props.modelValue;
+    markdown.value = htmlToMarkdown(html);
+    mode.value = 'markdown';
+    preview.value = false;
     emit('update:modelValue', markdown.value);
+    return;
   }
+
+  const html = markdownToHtml(markdown.value);
+  mode.value = 'rich';
+  preview.value = false;
+  emit('update:modelValue', html);
+  await nextTick();
+  syncRichEditor(html);
 }
 function emitMarkdown(value: string) { markdown.value = value; emit('update:modelValue', value); }
 function emitRich() { if (editorRef.value) emit('update:modelValue', sanitizeHtml(editorRef.value.innerHTML)); }
@@ -135,13 +147,80 @@ async function uploadImage(event: Event) {
 function handlePaste(event: ClipboardEvent) { event.preventDefault(); const text = event.clipboardData?.getData('text/plain') || ''; document.execCommand('insertText', false, text); emitRich(); }
 
 function looksLikeHtml(value: string) { return /<\/?[a-z][\s\S]*>/i.test(value); }
+function initialMode(value: string): 'markdown' | 'rich' { return value.trim() && !looksLikeHtml(value) ? 'markdown' : 'rich'; }
 function markdownToHtml(value: string) { return sanitizeHtml(marked.parse(value, { gfm: true, breaks: true }) as string); }
 function renderContent(value: string) { return sanitizeHtml(looksLikeHtml(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string); }
 function sanitizeHtml(value: string) { return DOMPurify.sanitize(value, { ADD_ATTR: ['target', 'style', 'color'], ALLOW_UNKNOWN_PROTOCOLS: false }); }
 function htmlToMarkdown(value: string) {
-  const text = value.replace(/<br\s*\/?>/gi, '\n').replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**').replace(/<b>([\s\S]*?)<\/b>/gi, '**$1**').replace(/<em>([\s\S]*?)<\/em>/gi, '*$1*').replace(/<i>([\s\S]*?)<\/i>/gi, '*$1*').replace(/<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)').replace(/<img[^>]*src=["']([^"']+)["'][^>]*>/gi, '![]($1)').replace(/<\/?p[^>]*>/gi, '\n').replace(/<\/?div[^>]*>/gi, '\n').replace(/<[^>]+>/g, '');
-  const holder = document.createElement('textarea'); holder.innerHTML = text; return holder.value.replace(/\n{3,}/g, '\n\n').trim();
+  const template = document.createElement('template');
+  template.innerHTML = sanitizeHtml(value);
+  return normalizeMarkdown(markdownChildren(template.content));
 }
+
+function markdownChildren(parent: ParentNode): string { return Array.from(parent.childNodes).map(nodeToMarkdown).join(''); }
+function nodeToMarkdown(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return escapeMarkdown(node.textContent || '');
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+  const element = node as HTMLElement;
+  const tag = element.tagName.toLowerCase();
+  const content = markdownChildren(element);
+  if (tag === 'br') return '\n';
+  if (tag === 'strong' || tag === 'b') return `**${content.trim()}**`;
+  if (tag === 'em' || tag === 'i') return `*${content.trim()}*`;
+  if (tag === 's' || tag === 'strike' || tag === 'del') return `~~${content.trim()}~~`;
+  if (tag === 'code' && element.parentElement?.tagName.toLowerCase() !== 'pre') return `\`${(element.textContent || '').trim().replace(/`/g, '\\`')}\``;
+  if (tag === 'pre') return codeBlockToMarkdown(element);
+  if (/^h[1-6]$/.test(tag)) {
+    const hasNestedBlock = Array.from(element.children).some((child) => ['ul', 'ol', 'pre', 'blockquote'].includes(child.tagName.toLowerCase()));
+    return hasNestedBlock ? `\n${content.trim()}\n\n` : `\n${'#'.repeat(Number(tag.slice(1)))} ${content.trim()}\n\n`;
+  }
+  if (tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article') return `\n${content.trim()}\n\n`;
+  if (tag === 'blockquote') return `\n${content.trim().split('\n').map((line) => `> ${line}`).join('\n')}\n\n`;
+  if (tag === 'ul' || tag === 'ol') return listToMarkdown(element);
+  if (tag === 'a') {
+    const href = element.getAttribute('href');
+    return href ? `[${content.trim()}](${href})` : content;
+  }
+  if (tag === 'img') {
+    const src = element.getAttribute('src');
+    return src ? `![${element.getAttribute('alt') || ''}](${src})` : '';
+  }
+  if (tag === 'hr') return '\n---\n\n';
+  if (tag === 'span' && (element.hasAttribute('style') || element.hasAttribute('color'))) return element.outerHTML;
+  if (tag === 'u' || tag === 'table' || tag === 'thead' || tag === 'tbody' || tag === 'tr' || tag === 'td' || tag === 'th') return element.outerHTML;
+  return content;
+}
+
+function listToMarkdown(list: HTMLElement, depth = 0): string {
+  const ordered = list.tagName.toLowerCase() === 'ol';
+  const items = Array.from(list.children).filter((child) => child.tagName.toLowerCase() === 'li') as HTMLElement[];
+  const indent = '  '.repeat(depth);
+  const output: string = items.map((item, index): string => {
+    const directContent = Array.from(item.childNodes)
+      .filter((child) => !(child.nodeType === Node.ELEMENT_NODE && ['ul', 'ol'].includes((child as HTMLElement).tagName.toLowerCase())))
+      .map(nodeToMarkdown).join('').trim();
+    const nested: string = Array.from(item.children)
+      .filter((child) => ['ul', 'ol'].includes(child.tagName.toLowerCase()))
+      .map((child) => listToMarkdown(child as HTMLElement, depth + 1).trimEnd()).join('\n');
+    return `${indent}${ordered ? `${index + 1}.` : '-'} ${directContent}${nested ? `\n${nested}` : ''}`.trimEnd();
+  }).join('\n');
+  return output ? `${output}\n\n` : '';
+}
+
+function codeBlockToMarkdown(element: HTMLElement) {
+  const code = element.querySelector('code');
+  const language = code?.className.match(/language-([\w-]+)/)?.[1] || '';
+  const text = code?.textContent || element.textContent || '';
+  const fence = text.includes('```') ? '````' : '```';
+  return `\n${fence}${language}\n${text.replace(/\n+$/, '')}\n${fence}\n\n`;
+}
+
+function escapeMarkdown(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/([`*_[\]])/g, '\\$1').replace(/(^|\n)(#{1,6}|[-+])\s/g, '$1\\$2 ');
+}
+
+function normalizeMarkdown(value: string) { return value.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); }
 </script>
 
 <style scoped>
