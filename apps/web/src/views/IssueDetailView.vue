@@ -1,7 +1,7 @@
 <template>
   <main class="content-wrap">
     <n-spin :show="loading">
-      <n-result v-if="errorMessage" status="403" title="暂时无法查看此议题" :description="errorMessage">
+      <n-result v-if="errorMessage" status="403" title="暂时无法查看此议题" :description="`发生系统错误，请向管理员反馈： ${errorMessage}`">
         <template #footer><n-button @click="router.push('/')">返回议题列表</n-button></template>
       </n-result>
       <template v-if="detail">
@@ -84,18 +84,32 @@
                   <n-thing>
                     <template #header><n-space align="center" :size="8"><n-text strong>{{ comment.author.displayName }}</n-text><n-tag v-if="!comment.published" size="small" type="warning" :bordered="false">待统一公布</n-tag></n-space></template>
                     <template #header-extra><n-tooltip v-if="comment.viewerCanEdit"><template #trigger><n-button text circle size="small" aria-label="编辑意见" @click="startCommentEdit(comment)"><template #icon><n-icon><CreateOutline /></n-icon></template></n-button></template>编辑意见</n-tooltip></template>
-                    <n-space :size="8" class="comment-meta"><n-text depth="3" class="comment-time">{{ formatTime(comment.createdAt) }}</n-text><n-text v-if="comment.editedAt" depth="3" class="comment-time">已编辑 {{ formatTime(comment.editedAt) }}</n-text></n-space>
                     <template v-if="editingCommentId === comment.id">
                       <ContentEditor v-model="editingCommentBody" :min-rows="4" />
                       <n-space justify="end" class="comment-edit-actions"><n-button size="small" @click="cancelCommentEdit">取消</n-button><n-button size="small" type="primary" :loading="savingComment" :disabled="!hasContent(editingCommentBody)" @click="saveCommentEdit(comment.id)">保存</n-button></n-space>
                     </template>
                     <template v-else>
                       <div class="comment-content rendered-content" v-html="renderContent(comment.bodyMd)" />
-                      <n-space v-if="comment.viewerCanReact || hasReactions(comment)" class="reaction-bar" :size="6">
+                      <n-list v-if="comment.replies.length" class="reply-list" :show-divider="false">
+                        <n-list-item v-for="reply in comment.replies" :key="reply.id" class="reply-item">
+                          <template #prefix><n-avatar round :size="24" :src="reply.author.avatarUrl || undefined">{{ reply.author.displayName.slice(0, 1) }}</n-avatar></template>
+                          <n-thing>
+                            <template #header><n-text strong>{{ reply.author.displayName }}</n-text></template>
+                            <div class="reply-content rendered-content" v-html="renderContent(reply.bodyMd)" />
+                            <n-space justify="end" class="reply-time"><n-text depth="3" class="comment-time">{{ formatTime(reply.createdAt) }}</n-text></n-space>
+                          </n-thing>
+                        </n-list-item>
+                      </n-list>
+                      <div v-if="replyingCommentId === comment.id" class="reply-form"><n-input v-model:value="replyBody" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="回复这条意见" /><n-space justify="end" :size="8"><n-button size="small" @click="cancelReply">取消</n-button><n-button size="small" type="primary" :loading="submittingReply" :disabled="!hasContent(replyBody)" @click="submitReply(comment.id)">发送回复</n-button></n-space></div>
+                      <div class="comment-footer">
+                      <n-space v-if="comment.published" class="reaction-bar" :size="6">
                         <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'like') ? 'primary' : 'default'" :disabled="!comment.viewerCanReact" aria-label="点赞" @click="toggleReaction(comment, 'like')"><template #icon><n-icon><ThumbsUpOutline /></n-icon></template>{{ comment.reactionCounts.like || '' }}</n-button></template>点赞</n-tooltip>
                         <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'yes') ? 'success' : 'default'" :disabled="!comment.viewerCanReact" aria-label="赞同" @click="toggleReaction(comment, 'yes')"><template #icon><n-icon><CheckmarkOutline /></n-icon></template>{{ comment.reactionCounts.yes || '' }}</n-button></template>赞同</n-tooltip>
                         <n-tooltip><template #trigger><n-button size="small" secondary :type="reactionActive(comment, 'no') ? 'error' : 'default'" :disabled="!comment.viewerCanReact" aria-label="反对" @click="toggleReaction(comment, 'no')"><template #icon><n-icon><CloseOutline /></n-icon></template>{{ comment.reactionCounts.no || '' }}</n-button></template>反对</n-tooltip>
+                        <n-button v-if="comment.viewerCanReply" text size="small" @click="startReply(comment)"><template #icon><n-icon><ChatbubbleOutline /></n-icon></template>回复{{ comment.replies.length ? ` ${comment.replies.length}` : '' }}</n-button>
                       </n-space>
+                      <n-space :size="8" class="comment-meta"><n-text depth="3" class="comment-time">{{ formatTime(comment.createdAt) }}</n-text><n-text v-if="comment.editedAt" depth="3" class="comment-time">已编辑 {{ formatTime(comment.editedAt) }}</n-text></n-space>
+                      </div>
                     </template>
                   </n-thing>
                 </n-list-item>
@@ -152,7 +166,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArchiveOutline, BarChartOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
+import { ArchiveOutline, BarChartOutline, ChatbubbleOutline, CheckmarkCircleOutline, CheckmarkOutline, CloseCircleOutline, CloseOutline, CreateOutline, LockClosedOutline, RefreshOutline, RemoveCircleOutline, SendOutline, ThumbsUpOutline } from '@vicons/ionicons5';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { NAlert, NAvatar, NBadge, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NList, NListItem, NModal, NRadioButton, NRadioGroup, NResult, NSpace, NSpin, NStatistic, NTag, NText, NThing, NTooltip, useDialog, useMessage } from 'naive-ui';
@@ -171,6 +185,7 @@ const commentBody = ref('');
 const errorMessage = ref('');
 const showEditor = ref(false); const savingEdit = ref(false); const editTitle = ref(''); const editBody = ref('');
 const editingCommentId = ref<string | null>(null); const editingCommentBody = ref(''); const savingComment = ref(false);
+const replyingCommentId = ref<string | null>(null); const replyBody = ref(''); const submittingReply = ref(false);
 const voteChangeBlocked = computed(() => Boolean(detail.value?.myVote) && (!detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0 || detail.value.myVote.changeCount >= detail.value.issue.maxVoteChanges));
 const canSubmitVote = computed(() => Boolean(choice.value) && Boolean(detail.value?.viewer.canVote) && !voteChangeBlocked.value);
 const revotePolicy = computed(() => {
@@ -195,6 +210,9 @@ async function load() { loading.value = true; errorMessage.value = ''; try { det
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
 async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { if (!comment.viewerCanReact) return; const result = await apiPost<{ reactionCounts: Record<string, number>; myReactions: string[] }>(`/issues/${route.params.number}/comments/${comment.id}/reactions`, { reaction }); comment.reactionCounts = result.reactionCounts; comment.myReactions = result.myReactions; }
+function startReply(comment: any) { replyingCommentId.value = comment.id; replyBody.value = ''; }
+function cancelReply() { replyingCommentId.value = null; replyBody.value = ''; }
+async function submitReply(commentId: string) { if (!hasContent(replyBody.value)) return; submittingReply.value = true; try { await apiPost(`/issues/${route.params.number}/comments/${commentId}/replies`, { bodyMd: replyBody.value }); comments.value = await apiGet(`/issues/${route.params.number}/comments`); cancelReply(); message.success('回复已发送'); } finally { submittingReply.value = false; } }
 function startCommentEdit(comment: any) { editingCommentId.value = comment.id; editingCommentBody.value = comment.bodyMd; }
 function cancelCommentEdit() { editingCommentId.value = null; editingCommentBody.value = ''; }
 async function saveCommentEdit(commentId: string) { if (!hasContent(editingCommentBody.value)) return; savingComment.value = true; try { await apiPut(`/issues/${route.params.number}/comments/${commentId}`, { bodyMd: editingCommentBody.value }); await load(); cancelCommentEdit(); message.success('意见已保存'); } finally { savingComment.value = false; } }
@@ -266,7 +284,7 @@ onMounted(load);
 }
 
 .comment-meta {
-  margin-top: 4px;
+  margin-left: auto;
 }
 
 .comment-edit-actions {
@@ -288,7 +306,51 @@ onMounted(load);
 }
 
 .reaction-bar {
+  margin: 0;
+}
+
+.comment-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 12px;
+}
+
+.reply-list {
+  margin: 14px 0 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--n-divider-color, #e5e7eb);
+}
+
+.reply-item :deep(.n-list-item) {
+  padding: 8px 0;
+}
+
+.reply-item :deep(.n-list-item__prefix) {
+  align-self: flex-start;
+  margin-top: 2px;
+  margin-right: 8px;
+}
+
+.reply-content {
+  margin-top: 5px;
+  color: #344054;
+  line-height: 1.7;
+}
+
+.reply-time {
+  margin-top: 6px;
+}
+
+.reply-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--n-color-modal, #fafcff);
+  border: 1px solid var(--n-border-color, #e5e7eb);
+  border-radius: 6px;
 }
 
 .empty-comments {
@@ -339,6 +401,15 @@ onMounted(load);
 @media (max-width: 820px) {
   .issue-heading h1 {
     font-size: 24px;
+  }
+
+  .comment-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .comment-meta {
+    margin-left: 0;
   }
 }
 </style>

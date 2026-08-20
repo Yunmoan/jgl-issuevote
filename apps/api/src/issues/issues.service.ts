@@ -231,7 +231,11 @@ export class IssuesService implements OnModuleInit {
         viewerId: viewer?.id || 0
       }
     );
-    const reactions = await this.reactionsForComments(rows.map((row) => row.id), viewer?.id || null);
+    const commentIds = rows.map((row) => row.id);
+    const [reactions, replies] = await Promise.all([
+      this.reactionsForComments(commentIds, viewer?.id || null),
+      this.repliesForComments(commentIds)
+    ]);
     return rows.map((row) => ({
       id: String(row.id),
       bodyMd: row.body_md,
@@ -248,8 +252,10 @@ export class IssuesService implements OnModuleInit {
       viewerCanSeeBeforePublish: canModerate || String(row.author_id) === viewer?.id,
       viewerCanEdit: Boolean(viewer && String(row.author_id) === viewer.id && this.canCommentOnIssue(issue, viewer)),
       viewerCanReact: Boolean(viewer && String(row.author_id) !== viewer.id && (!row.publish_at || new Date(row.publish_at).getTime() <= Date.now())),
+      viewerCanReply: Boolean(viewer && this.canCommentOnIssue(issue, viewer) && (!row.publish_at || new Date(row.publish_at).getTime() <= Date.now())),
       reactionCounts: reactions.get(String(row.id))?.counts || { like: 0, yes: 0, no: 0 },
-      myReactions: reactions.get(String(row.id))?.mine || []
+      myReactions: reactions.get(String(row.id))?.mine || [],
+      replies: replies.get(String(row.id)) || []
     }));
   }
 
@@ -321,6 +327,25 @@ export class IssuesService implements OnModuleInit {
     const summary = reactions.get(String(commentId)) || { counts: { like: 0, yes: 0, no: 0 }, mine: [] };
     await this.audit(viewer.id, 'comment.reaction', 'issue_comment', String(commentId), { issueNumber: number, reaction, active: !existing });
     return { commentId: String(commentId), reactionCounts: summary.counts, myReactions: summary.mine };
+  }
+
+  async createCommentReply(number: string, commentId: string, bodyMd: string, viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    if (!this.canCommentOnIssue(detail.issue, viewer)) throw new ForbiddenException('当前不能回复意见');
+    const comment = await this.db.first(
+      `SELECT id, publish_at FROM issue_comments WHERE id = :commentId AND issue_id = :issueId AND deleted_at IS NULL`,
+      { commentId, issueId: detail.issue.id }
+    );
+    if (!comment) throw new NotFoundException('意见不存在');
+    if (comment.publish_at && new Date(comment.publish_at).getTime() > Date.now()) throw new ForbiddenException('意见尚未公布');
+    const now = nowSql();
+    const result = await this.db.exec(
+      `INSERT INTO issue_comment_replies (comment_id, author_id, body_md, created_at, updated_at)
+       VALUES (:commentId, :authorId, :bodyMd, :now, :now)`,
+      { commentId, authorId: viewer.id, bodyMd, now }
+    );
+    await this.audit(viewer.id, 'comment.reply', 'issue_comment_reply', String(result.insertId), { issueNumber: number, commentId: String(commentId) });
+    return { id: String(result.insertId) };
   }
 
   async vote(number: string, choice: VoteChoice, reason: string | undefined, viewer: Viewer) {
@@ -514,6 +539,29 @@ export class IssuesService implements OnModuleInit {
       summary.counts[reaction] = Number(row.count);
       if (Number(row.mine) > 0) summary.mine.push(reaction);
       result.set(key, summary);
+    }
+    return result;
+  }
+
+  private async repliesForComments(commentIds: unknown[]) {
+    const result = new Map<string, Array<{ id: string; bodyMd: string; createdAt: string; updatedAt: string; author: { id: string; displayName: string; avatarUrl: string | null } }>>();
+    if (commentIds.length === 0) return result;
+    const rows = await this.db.rows(
+      `SELECT r.id, r.comment_id, r.body_md, r.created_at, r.updated_at, u.id AS author_id, u.display_name AS author_name, u.avatar_url AS author_avatar
+       FROM issue_comment_replies r
+       JOIN users u ON u.id = r.author_id
+       WHERE r.comment_id IN (${commentIds.map((_, index) => `:commentId${index}`).join(',')})
+       ORDER BY r.created_at ASC`,
+      Object.fromEntries(commentIds.map((id, index) => [`commentId${index}`, id]))
+    );
+    for (const row of rows) {
+      const key = String(row.comment_id);
+      const items = result.get(key) || [];
+      items.push({
+        id: String(row.id), bodyMd: row.body_md, createdAt: row.created_at, updatedAt: row.updated_at,
+        author: { id: String(row.author_id), displayName: row.author_name, avatarUrl: row.author_avatar }
+      });
+      result.set(key, items);
     }
     return result;
   }
