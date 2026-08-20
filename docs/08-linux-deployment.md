@@ -41,6 +41,7 @@ API Node.js
 NODE_ENV=production
 APP_URL=https://vote.example.com
 API_URL=https://vote.example.com/api
+VITE_API_BASE_URL=/api
 DATABASE_URL=mysql://user:password@127.0.0.1:3306/jgl_issuevote
 REDIS_URL=redis://127.0.0.1:6379/0
 SESSION_SECRET=change-me
@@ -103,6 +104,7 @@ NODE_ENV=production
 PORT=3000
 APP_URL=https://vote.example.com
 API_URL=https://vote.example.com/api
+VITE_API_BASE_URL=/api
 DATABASE_URL=mysql://jgl:replace-with-a-strong-password@127.0.0.1:3306/jgl_issuevote
 SESSION_SECRET=replace-with-a-long-random-secret
 TOKEN_ENCRYPTION_KEY=replace-with-a-32-byte-secret
@@ -114,7 +116,7 @@ NYK_OAUTH_CLIENT_SECRET=your-client-secret
 NYK_OAUTH_REDIRECT_URI=https://vote.example.com/api/auth/natayarkid/callback
 ```
 
-`APP_URL` 和 `NYK_OAUTH_REDIRECT_URI` 必须使用实际 HTTPS 域名。后者还必须与 NatayarkID 管理端登记的回调地址完全一致；协议、域名、路径或末尾斜杠任何一项不一致都会导致登录回调失败。
+`APP_URL` 和 `NYK_OAUTH_REDIRECT_URI` 必须使用实际 HTTPS 域名。后者还必须与 NatayarkID 管理端登记的回调地址完全一致；协议、域名、路径或末尾斜杠任何一项不一致都会导致登录回调失败。`VITE_API_BASE_URL=/api` 会在 Web 构建时写入静态文件；同域反向代理部署必须在运行 `npm run build` 前设置它，不能使用本地开发的 `http://localhost:3000/api`。
 
 ## 构建与迁移
 

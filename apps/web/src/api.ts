@@ -1,4 +1,18 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const API_BASE = resolveApiBase();
+
+function resolveApiBase() {
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (!configured) return import.meta.env.DEV ? 'http://localhost:3000/api' : '/api';
+  return import.meta.env.PROD && isLoopbackApi(configured) ? '/api' : configured.replace(/\/$/, '');
+}
+
+function isLoopbackApi(value: string) {
+  try {
+    return ['localhost', '127.0.0.1', '::1'].includes(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'GET' });
