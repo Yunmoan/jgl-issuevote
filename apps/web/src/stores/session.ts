@@ -51,15 +51,18 @@ export const useSessionStore = defineStore('session', {
     },
     async autoLoginWithFeishu() {
       const feishu = this.providers?.feishu;
-      if (!feishu?.enabled || !feishu.autoLogin || !feishu.appId || !isFeishuContainer() || feishuAutoLoginAttempted) return;
+      if (!feishu?.enabled || !feishu.autoLogin || !feishu.appId || feishuAutoLoginAttempted) return;
       if (this.viewer?.boundProviders.includes('feishu')) return;
       feishuAutoLoginAttempted = true;
       try {
         await loadFeishuSdk(feishu.sdkUrl);
+        await waitForFeishuSdkReady();
         const code = await requestFeishuAuthCode(feishu.appId);
         if (code) this.viewer = await apiPost<Viewer>(this.viewer ? '/auth/feishu/bind-code' : '/auth/feishu/code', { code });
-      } catch {
-        // Outside the Feishu container the SDK may be unavailable; keep the page usable.
+      } catch (error) {
+        // The SDK is intentionally attempted after it has been loaded: some Feishu
+        // WebViews expose their bridge only then and do not identify in the UA.
+        console.warn('飞书自动登录未完成', error);
       }
     },
     async logout() {
@@ -70,6 +73,7 @@ export const useSessionStore = defineStore('session', {
 });
 
 let feishuAutoLoginAttempted = false;
+let feishuSdkPromise: Promise<void> | null = null;
 
 declare global {
   interface Window {
@@ -78,17 +82,39 @@ declare global {
   }
 }
 
-function isFeishuContainer() {
-  return /feishu|lark/i.test(navigator.userAgent) || Boolean(window.tt?.requestAuthCode || window.h5sdk?.biz?.util?.getAuthCode);
+function loadFeishuSdk(src?: string) {
+  if (feishuSdkPromise) return feishuSdkPromise;
+  if (window.tt?.requestAuthCode) return Promise.resolve();
+  if (!src) return Promise.reject(new Error('飞书 SDK 地址未配置'));
+  feishuSdkPromise = new Promise<void>((resolve, reject) => {
+    const onLoaded = () => {
+      const script = document.querySelector<HTMLScriptElement>('script[data-feishu-sdk]');
+      if (script) script.dataset.feishuSdkLoaded = 'true';
+      resolve();
+    };
+    const existing = document.querySelector<HTMLScriptElement>('script[data-feishu-sdk]');
+    if (existing) {
+      if (existing.dataset.feishuSdkLoaded === 'true' || window.h5sdk) { onLoaded(); return; }
+      existing.addEventListener('load', onLoaded, { once: true });
+      existing.addEventListener('error', () => reject(new Error('飞书 SDK 加载失败')), { once: true });
+      return;
+    }
+    const script = document.createElement('script'); script.src = src; script.async = true; script.dataset.feishuSdk = 'true'; script.onload = onLoaded; script.onerror = () => reject(new Error('飞书 SDK 加载失败')); document.head.appendChild(script);
+  });
+  return feishuSdkPromise;
 }
 
-function loadFeishuSdk(src?: string) {
-  if (window.tt?.requestAuthCode || window.h5sdk?.biz?.util?.getAuthCode) return Promise.resolve();
-  if (!src) return Promise.reject(new Error('飞书 SDK 地址未配置'));
-  return new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-feishu-sdk]');
-    if (existing) { existing.addEventListener('load', () => resolve(), { once: true }); existing.addEventListener('error', () => reject(new Error('飞书 SDK 加载失败')), { once: true }); return; }
-    const script = document.createElement('script'); script.src = src; script.async = true; script.dataset.feishuSdk = 'true'; script.onload = () => resolve(); script.onerror = () => reject(new Error('飞书 SDK 加载失败')); document.head.appendChild(script);
+function waitForFeishuSdkReady() {
+  const h5sdk = window.h5sdk;
+  if (window.tt?.requestAuthCode || !h5sdk?.ready) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(resolve, 3000);
+    try {
+      h5sdk.ready?.(() => { window.clearTimeout(timeout); resolve(); });
+    } catch {
+      window.clearTimeout(timeout);
+      resolve();
+    }
   });
 }
 
