@@ -20,11 +20,8 @@ export class UsersService {
     }
     const rows = await this.db.rows(
       `SELECT u.id, u.display_name, u.avatar_url, u.email, u.status, u.last_login_at, u.created_at,
-              GROUP_CONCAT(DISTINCT pg.group_key ORDER BY pg.group_key) AS groups,
               GROUP_CONCAT(DISTINCT ai.provider ORDER BY ai.provider) AS providers
        FROM users u
-       LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
-       LEFT JOIN permission_groups pg ON pg.id = ugm.group_id
        LEFT JOIN auth_identities ai ON ai.user_id = u.id
        WHERE ${conditions.join(' AND ')}
        GROUP BY u.id
@@ -32,6 +29,24 @@ export class UsersService {
        LIMIT 100`,
       params
     );
+    const userIds = rows.map((row) => String(row.id));
+    const memberships = userIds.length
+      ? await this.db.rows(
+        `SELECT ugm.user_id, pg.group_key, pg.name
+         FROM user_group_memberships ugm
+         JOIN permission_groups pg ON pg.id = ugm.group_id
+         WHERE ugm.user_id IN (${userIds.map((_, index) => `:userId${index}`).join(', ')})
+         ORDER BY pg.group_key`,
+        Object.fromEntries(userIds.map((id, index) => [`userId${index}`, id]))
+      )
+      : [];
+    const groupsByUser = new Map<string, Array<{ groupKey: string; name: string }>>();
+    for (const membership of memberships) {
+      const userId = String(membership.user_id);
+      const groups = groupsByUser.get(userId) || [];
+      groups.push({ groupKey: String(membership.group_key), name: String(membership.name) });
+      groupsByUser.set(userId, groups);
+    }
     return rows.map((row) => ({
       id: String(row.id),
       displayName: row.display_name,
@@ -40,7 +55,8 @@ export class UsersService {
       status: row.status,
       lastLoginAt: row.last_login_at,
       createdAt: row.created_at,
-      groups: row.groups ? String(row.groups).split(',') : [],
+      groups: (groupsByUser.get(String(row.id)) || []).map((group) => group.groupKey),
+      groupDetails: groupsByUser.get(String(row.id)) || [],
       boundProviders: row.providers ? String(row.providers).split(',') : []
     }));
   }
