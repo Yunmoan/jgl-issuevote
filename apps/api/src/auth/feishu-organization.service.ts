@@ -100,7 +100,7 @@ export class FeishuOrganizationService {
       );
       for (const department of data.items || []) {
         const id = String(department.open_department_id || '').trim();
-        if (id) ids.add(id);
+        if (isChildDepartmentId(id)) ids.add(id);
       }
       pageToken = data.has_more && data.page_token ? data.page_token : undefined;
     } while (pageToken);
@@ -108,6 +108,7 @@ export class FeishuOrganizationService {
   }
 
   private async departmentGroup(departmentId: string, token: string) {
+    if (!isChildDepartmentId(departmentId)) throw new BadRequestException('飞书根部门不能作为权限组同步');
     const existing = await this.db.first(
       `SELECT fdg.group_id FROM feishu_department_groups fdg WHERE fdg.department_id = :departmentId`,
       { departmentId }
@@ -126,7 +127,7 @@ export class FeishuOrganizationService {
 
   private async departmentDetails(departmentIds: string[], token: string) {
     const all = new Map<string, FeishuDepartment>();
-    for (const ids of chunks([...new Set(departmentIds)], 50)) {
+    for (const ids of chunks([...new Set(departmentIds.filter(isChildDepartmentId))], 50)) {
       if (!ids.length) continue;
       const data = await this.feishuGet<{ items?: FeishuDepartment[] }>(
         '/contact/v3/departments/batch',
@@ -135,7 +136,7 @@ export class FeishuOrganizationService {
       );
       for (const department of data.items || []) {
         const id = String(department.open_department_id || '').trim();
-        if (id) all.set(id, department);
+        if (isChildDepartmentId(id)) all.set(id, department);
       }
     }
     return [...all.values()];
@@ -144,6 +145,7 @@ export class FeishuOrganizationService {
   private async upsertDepartment(department: FeishuDepartment) {
     const departmentId = String(department.open_department_id || '').trim();
     if (!departmentId) throw new BadGatewayException('飞书部门信息缺少 open_department_id');
+    if (!isChildDepartmentId(departmentId)) throw new BadRequestException('飞书根部门不能作为权限组同步');
     const name = truncate(String(department.name || departmentId).trim(), 80);
     const parentDepartmentId = department.parent_department_id ? String(department.parent_department_id) : null;
     const now = nowSql();
@@ -226,7 +228,11 @@ export class FeishuOrganizationService {
 }
 
 function uniqueDepartmentIds(value: unknown) {
-  return [...new Set((Array.isArray(value) ? value : []).map((item) => String(item).trim()).filter((id) => id && id !== '0'))];
+  return [...new Set((Array.isArray(value) ? value : []).map((item) => String(item).trim()).filter(isChildDepartmentId))];
+}
+
+function isChildDepartmentId(id: string) {
+  return Boolean(id) && id !== '0';
 }
 
 function truncate(value: string, limit: number) {
