@@ -20,7 +20,14 @@
           </template>
           创建议题
         </n-button>
-        <n-button v-else-if="!session.viewer && session.providers?.natayarkid.enabled" secondary @click="session.loginWithNatayarkId">登录以创建议题</n-button>
+        <n-tooltip v-else-if="!session.viewer" :disabled="Boolean(session.providers?.natayarkid.enabled)">
+          <template #trigger>
+            <span class="login-to-create-trigger">
+              <n-button secondary :disabled="!session.providers?.natayarkid.enabled" :loading="session.providers === null" @click="session.loginWithNatayarkId">登录以创建议题</n-button>
+            </span>
+          </template>
+          {{ session.providers ? 'NatayarkID 登录未启用' : '正在读取登录配置' }}
+        </n-tooltip>
       </div>
     </div>
 
@@ -211,6 +218,10 @@ function relativeTime(value: string) {
 watch(() => session.viewer?.id, () => load());
 onMounted(() => { load(); loadSiteConfig(); });
 </script>
+
+<style scoped>
+.login-to-create-trigger { display: inline-flex; }
+</style>
 
 <style scoped>
 .issue-row {

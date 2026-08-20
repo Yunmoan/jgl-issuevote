@@ -2,8 +2,11 @@
   <main class="content-wrap">
     <div class="page-title"><div><h1>管理后台</h1><p class="page-subtitle">管理成员身份、权限边界、站点配置和操作记录。</p></div></div>
     <div class="admin-grid">
-      <n-card class="admin-menu" content-style="padding: 8px" size="small"><n-menu v-model:value="active" :options="menuOptions" /></n-card>
-      <section>
+      <aside class="admin-navigation">
+        <n-select v-if="compactAdminNav" v-model:value="active" class="admin-mobile-select" :options="adminSelectOptions" aria-label="切换管理功能" />
+        <n-card v-else class="admin-menu" content-style="padding: 8px" size="small"><n-menu v-model:value="active" :options="menuOptions" /></n-card>
+      </aside>
+      <section class="admin-content">
         <n-card v-if="active === 'users'" title="用户管理" size="large">
           <template #header-extra><n-button tertiary @click="loadUsers"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button></template>
           <n-space class="toolbar" :wrap="true"><n-input v-model:value="q" clearable placeholder="姓名、邮箱或身份标识" @keyup.enter="loadUsers"><template #prefix><n-icon><SearchOutline /></n-icon></template></n-input><n-button type="primary" @click="loadUsers">搜索</n-button></n-space>
@@ -22,35 +25,41 @@
           <n-data-table :columns="labelColumns" :data="labels" :loading="loading" :scroll-x="760" />
         </n-card>
 
-        <n-card v-else-if="active === 'settings'" title="站点设置" size="large">
+        <n-card v-else-if="active === 'settings'" title="站点设置" size="large" class="settings-card">
           <template #header-extra><n-button tertiary @click="loadSettings"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button></template>
-          <n-form label-placement="top" class="settings-form">
+          <section class="settings-section" aria-labelledby="site-settings-heading">
+            <div class="settings-section-heading"><h2 id="site-settings-heading">站点与展示</h2><p>用于统一首页、导航栏和议题创建时的默认展示方式。</p></div>
+            <n-form label-placement="top" class="settings-form">
             <n-form-item label="站点名称" :feedback="'显示在浏览器标题和全站导航栏中。'">
               <n-input v-model:value="siteName" maxlength="40" show-count placeholder="例如：冀高联事项" />
             </n-form-item>
-            <n-form-item label="站点简介"><n-input v-model:value="siteDescription" maxlength="160" show-count placeholder="显示在议题列表标题下方" /></n-form-item>
-            <n-form-item label="站点公告"><n-input v-model:value="siteNotice" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="留空则不显示公告" /></n-form-item>
-            <n-form-item label="页脚版权标识"><n-input v-model:value="footerText" maxlength="160" show-count placeholder="例如：Copyright 2026 冀高联事项" /></n-form-item>
             <n-form-item label="新议题默认可见性"><n-select v-model:value="defaultIssueVisibility" :options="visibilityOptions" /></n-form-item>
+            <n-form-item class="settings-span-full" label="站点简介"><n-input v-model:value="siteDescription" maxlength="160" show-count placeholder="显示在议题列表标题下方" /></n-form-item>
+            <n-form-item class="settings-span-full" label="站点公告"><n-input v-model:value="siteNotice" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="留空则不显示公告" /></n-form-item>
+            <n-form-item class="settings-span-full" label="页脚版权标识"><n-input v-model:value="footerText" maxlength="160" show-count placeholder="例如：Copyright 2026 冀高联事项" /></n-form-item>
             <n-form-item label="已关闭议题自动归档"><n-input-number v-model:value="closedIssueArchiveAfterDays" :min="1" :max="3650" clearable><template #suffix>天后</template></n-input-number></n-form-item>
             <n-form-item label="水印显示"><n-select v-model:value="watermarkMode" :options="watermarkOptions" /></n-form-item>
-            <n-space><n-button type="primary" :loading="savingSite" @click="saveSiteName"><template #icon><n-icon><SaveOutline /></n-icon></template>保存设置</n-button></n-space>
-          </n-form>
+              <div class="settings-actions settings-span-full"><n-button type="primary" :loading="savingSite" @click="saveSiteName"><template #icon><n-icon><SaveOutline /></n-icon></template>保存站点设置</n-button></div>
+            </n-form>
+          </section>
           <n-divider />
-          <n-form label-placement="top" class="settings-form">
-            <n-form-item label="新议题预审方式" :feedback="'关闭：直接发布；手动：普通成员提交后由其他成员审批；AI：在创建第 1 步自动审核。'">
+          <section class="settings-section" aria-labelledby="review-settings-heading">
+            <div class="settings-section-heading"><h2 id="review-settings-heading">议题预审</h2><p>选择创建议题时使用的预审流程，并在启用 AI 时维护模型连接。</p></div>
+            <n-form label-placement="top" class="settings-form">
+            <n-form-item class="settings-span-full" label="新议题预审方式" :feedback="'关闭：直接发布；手动：普通成员提交后由其他成员审批；AI：在创建第 1 步自动审核。'">
               <n-select v-model:value="aiReviewMode" :options="aiReviewModeOptions" />
             </n-form-item>
             <template v-if="aiReviewMode === 'ai'">
-              <n-alert type="warning" :bordered="false" class="card-note">AI 预审用于初步筛查，不能替代专业法律意见。模型服务地址须兼容 OpenAI 的 <code>/chat/completions</code> 接口；Qwen3-8B 可直接使用。</n-alert>
-              <n-form-item label="AI 服务地址" :feedback="'填写 OpenAI 兼容 API 的基础地址，例如 http://127.0.0.1:8000/v1 或完整的 /chat/completions 地址。'"><n-input v-model:value="aiEndpoint" maxlength="500" placeholder="https://your-ai-service/v1" /></n-form-item>
+              <n-alert type="warning" :bordered="false" class="card-note settings-span-full">AI 预审用于初步筛查，不能替代专业法律意见。模型服务地址须兼容 OpenAI 的 <code>/chat/completions</code> 接口；Qwen3-8B 可直接使用。</n-alert>
+              <n-form-item class="settings-span-full" label="AI 服务地址" :feedback="'填写 OpenAI 兼容 API 的基础地址，例如 http://127.0.0.1:8000/v1 或完整的 /chat/completions 地址。'"><n-input v-model:value="aiEndpoint" maxlength="500" placeholder="https://your-ai-service/v1" /></n-form-item>
               <n-form-item label="模型名称"><n-input v-model:value="aiModel" maxlength="160" placeholder="Qwen3-8B" /></n-form-item>
-              <n-form-item label="API 密钥" :feedback="aiApiKeyConfigured ? '已保存密钥。留空会保留原密钥。' : '本地模型服务如未启用鉴权可留空。'"><n-input v-model:value="aiApiKey" type="password" show-password-on="click" maxlength="2000" placeholder="留空以保留现有密钥" /></n-form-item>
-              <n-form-item v-if="aiApiKeyConfigured" label="清除已保存的 API 密钥"><n-switch v-model:value="clearAiApiKey" /></n-form-item>
-              <n-form-item label="额外预审条件" :feedback="'这段提示词会与法律法规初步筛查一同发送给模型，用于定义独立的组织规则。'"><n-input v-model:value="aiPolicyPrompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" maxlength="6000" show-count placeholder="例如：议题必须说明预算来源，且不得包含个人隐私信息。" /></n-form-item>
+              <n-form-item label="API 密钥" :feedback="aiApiKeyConfigured ? '已保存密钥。留空会保留原密钥。' : '本地模型服务如未启用鉴权可留空。'"><n-input v-model:value="aiApiKey" type="password" show-password-on="click" autocomplete="new-password" maxlength="2000" placeholder="留空以保留现有密钥" /></n-form-item>
+              <n-form-item v-if="aiApiKeyConfigured" class="settings-span-full" label="清除已保存的 API 密钥"><n-switch v-model:value="clearAiApiKey" /></n-form-item>
+              <n-form-item class="settings-span-full" label="额外预审条件" :feedback="'这段提示词会与法律法规初步筛查一同发送给模型，用于定义独立的组织规则。'"><n-input v-model:value="aiPolicyPrompt" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" maxlength="6000" show-count placeholder="例如：议题必须说明预算来源，且不得包含个人隐私信息。" /></n-form-item>
             </template>
-            <n-space><n-button type="primary" :loading="savingAiReview" @click="saveAiReviewSettings"><template #icon><n-icon><SaveOutline /></n-icon></template>保存预审设置</n-button><n-button v-if="aiReviewMode === 'ai'" :loading="testingAiReview" @click="testAiReviewSettings">测试 AI 连接</n-button></n-space>
-          </n-form>
+              <div class="settings-actions settings-span-full"><n-button type="primary" :loading="savingAiReview" @click="saveAiReviewSettings"><template #icon><n-icon><SaveOutline /></n-icon></template>保存预审设置</n-button><n-button v-if="aiReviewMode === 'ai'" :loading="testingAiReview" @click="testAiReviewSettings">测试 AI 连接</n-button></div>
+            </n-form>
+          </section>
           <n-divider />
           <n-alert type="info" :bordered="false">身份认证密钥只从部署环境变量读取。AI API 密钥保存在系统设置中，后台不会返回其明文。</n-alert>
         </n-card>
@@ -90,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, reactive, ref, watch } from 'vue';
+import { h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { AddOutline, BookOutline, PeopleOutline, PricetagOutline, RefreshOutline, SaveOutline, SearchOutline, SettingsOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5';
 import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NColorPicker, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NInputNumber, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import type { DataTableColumns, MenuOption } from 'naive-ui';
@@ -106,6 +115,8 @@ const showLabelEditor = ref(false); const editingLabel = ref<any>(null); const s
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const watermarkOptions = [{ label: '关闭', value: 'off' }, { label: '全局水印', value: 'global' }, { label: '仅议题页水印', value: 'issue' }];
 const aiReviewModeOptions = [{ label: '关闭预审', value: 'disabled' }, { label: '手动预审', value: 'manual' }, { label: 'AI 自动预审', value: 'ai' }];
+const compactAdminNav = ref(false);
+const adminSelectOptions = [{ label: '用户管理', value: 'users' }, { label: '权限组', value: 'groups' }, { label: '议题分类', value: 'labels' }, { label: '站点设置', value: 'settings' }, { label: '审计日志', value: 'audit' }];
 const menuOptions: MenuOption[] = [
   { label: '用户管理', key: 'users', icon: () => h(NIcon, null, { default: () => h(PeopleOutline) }) },
   { label: '权限组', key: 'groups', icon: () => h(NIcon, null, { default: () => h(ShieldCheckmarkOutline) }) },
@@ -151,15 +162,27 @@ function openLabelEditor(label?: any) { editingLabel.value = label || null; labe
 async function saveLabel() { if (!labelForm.name.trim()) { message.error('请填写分类名称'); return; } savingLabel.value = true; try { const input = { name: labelForm.name.trim(), color: labelForm.color, description: labelForm.description.trim() || null }; if (editingLabel.value) await apiPatch(`/admin/labels/${editingLabel.value.id}`, input); else await apiPost('/admin/labels', input); message.success(editingLabel.value ? '分类已更新' : '分类已创建'); showLabelEditor.value = false; loadLabels(); } finally { savingLabel.value = false; } }
 function confirmDeleteLabel(label: any) { dialog.error({ title: '删除议题分类', content: `确定删除“${label.name}”吗？删除后不可恢复。`, positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/admin/labels/${label.id}`); message.success('分类已删除'); loadLabels(); } catch (error) { message.error(error instanceof Error ? error.message : '删除失败'); return false; } } }); }
 async function loadActive() { if (active.value === 'users') await loadUsers(); if (active.value === 'groups') await loadGroups(); if (active.value === 'labels') await loadLabels(); if (active.value === 'settings') await loadSettings(); if (active.value === 'audit') await loadAudit(); }
-watch(active, loadActive); onMounted(loadActive);
+function updateAdminNavigationMode() { compactAdminNav.value = window.matchMedia('(max-width: 980px)').matches; }
+watch(active, loadActive);
+onMounted(() => { updateAdminNavigationMode(); window.addEventListener('resize', updateAdminNavigationMode); loadActive(); });
+onBeforeUnmount(() => window.removeEventListener('resize', updateAdminNavigationMode));
 </script>
 
 <style scoped>
 .toolbar :deep(.n-input) { width: 300px; }
 .card-note { margin-bottom: 18px; }
-.settings-form { max-width: 560px; }
+.settings-section { max-width: 900px; }
+.settings-section-heading { margin: 0 0 20px; }
+.settings-section-heading h2 { margin: 0; color: inherit; font-size: 18px; font-weight: 650; line-height: 1.4; }
+.settings-section-heading p { margin: 5px 0 0; color: inherit; font-size: 14px; line-height: 1.6; opacity: .72; }
+.settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; max-width: 900px; }
+.settings-span-full { grid-column: 1 / -1; }
+.settings-form :deep(.n-input-number) { width: 100%; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 2px; }
 .selected-user { margin-top: 0; color: inherit; font-weight: 600; }.selected-user span { display: block; margin-top: 4px; color: inherit; opacity: .72; font-size: 13px; font-weight: 400; }
 .group-checks { padding: 8px 0; }
 :deep(.table-secondary) { margin-top: 3px; color: inherit; opacity: .72; font-size: 12px; }
-@media (max-width: 540px) { .toolbar { display: grid; grid-template-columns: 1fr auto; } .toolbar :deep(.n-input) { width: 100%; } }
+@media (max-width: 980px) { .admin-mobile-select { width: 100%; } }
+@media (max-width: 640px) { .settings-form { grid-template-columns: minmax(0, 1fr); } .settings-span-full { grid-column: auto; } .settings-card :deep(.n-card__content) { padding: 16px !important; } .settings-section-heading { margin-bottom: 16px; } }
+@media (max-width: 540px) { .toolbar { display: grid; grid-template-columns: 1fr auto; } .toolbar :deep(.n-input) { width: 100%; } .settings-actions > .n-button { flex: 1 1 auto; } }
 </style>

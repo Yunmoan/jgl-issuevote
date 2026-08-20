@@ -36,7 +36,16 @@
                 </div>
               </Transition>
             </n-layout-content>
-            <n-layout-footer bordered class="site-footer"><div>{{ footerText }} / Developed by 云默安 <a href="//www.zyghit.cn" target="_blank">@ZGIT</a></div> 这是一个开源软件： <a href="https://github.com/Yunmoan/jgl-issuevote" target="_blank">Github仓库</a> · 欢迎提交代码或反馈意见 </n-layout-footer>
+            <n-layout-footer bordered class="site-footer">
+              <div class="site-footer-inner">
+                <span class="footer-copyright">{{ footerText }}</span>
+                <span class="footer-divider" aria-hidden="true" />
+                <a class="footer-link" href="//www.zyghit.cn" target="_blank" rel="noreferrer">由 云默安 开发</a>
+                <span class="footer-divider" aria-hidden="true" />
+                <a class="footer-link" href="https://github.com/Yunmoan/jgl-issuevote" target="_blank" rel="noreferrer">GitHub 仓库</a>
+                <span class="footer-note">欢迎提交代码或反馈意见</span>
+              </div>
+            </n-layout-footer>
           </n-layout>
           <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="watermarkContent" :font-size="16" :line-height="16" :rotate="-15" :width="800" :height="500" :x-offset="12" :y-offset="60" />
           <n-drawer v-model:show="showMobileNav" placement="right" :width="280">
