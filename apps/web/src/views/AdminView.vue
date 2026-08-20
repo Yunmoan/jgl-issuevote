@@ -158,8 +158,8 @@ watch(active, loadActive); onMounted(loadActive);
 .toolbar :deep(.n-input) { width: 300px; }
 .card-note { margin-bottom: 18px; }
 .settings-form { max-width: 560px; }
-.selected-user { margin-top: 0; color: #101828; font-weight: 600; }.selected-user span { display: block; margin-top: 4px; color: #667085; font-size: 13px; font-weight: 400; }
+.selected-user { margin-top: 0; color: inherit; font-weight: 600; }.selected-user span { display: block; margin-top: 4px; color: inherit; opacity: .72; font-size: 13px; font-weight: 400; }
 .group-checks { padding: 8px 0; }
-:deep(.table-secondary) { margin-top: 3px; color: #667085; font-size: 12px; }
+:deep(.table-secondary) { margin-top: 3px; color: inherit; opacity: .72; font-size: 12px; }
 @media (max-width: 540px) { .toolbar { display: grid; grid-template-columns: 1fr auto; } .toolbar :deep(.n-input) { width: 100%; } }
 </style>

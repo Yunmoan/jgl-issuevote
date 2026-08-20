@@ -227,14 +227,14 @@ function normalizeMarkdown(value: string) { return value.replace(/[ \t]+\n/g, '\
 .content-editor { display: grid; width: 100%; min-width: 0; gap: 10px; }
 .editor-toolbar { min-height: 32px; }
 .content-editor :deep(.n-input) { width: 100%; }
-.rich-editor { width: 100%; min-height: 190px; padding: 12px; color: #344054; line-height: 1.75; border: 1px solid rgb(224, 224, 230); border-radius: 6px; outline: none; transition: border-color .2s ease, box-shadow .2s ease; }
+.rich-editor { width: 100%; min-height: 190px; padding: 12px; color: var(--n-text-color); line-height: 1.75; border: 1px solid var(--n-border-color); border-radius: 6px; outline: none; transition: border-color .2s ease, box-shadow .2s ease; }
 .rich-editor:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22, 119, 255, .12); }
 .rich-editor :deep(img), .content-preview :deep(img) { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 4px; }
-.content-preview { min-height: 120px; padding: 14px; color: #344054; line-height: 1.8; background: #fafcff; border: 1px dashed #d0d5dd; border-radius: 6px; }
+.content-preview { min-height: 120px; padding: 14px; color: var(--n-text-color); line-height: 1.8; background: var(--n-color); border: 1px dashed var(--n-border-color); border-radius: 6px; }
 .editor-color-picker { width: 240px; }
 .image-file-input { display: none; }
 .rich-editor :deep(h2), .content-preview :deep(h2) { margin: 18px 0 10px; font-size: 20px; line-height: 1.4; }
 .rich-editor :deep(h3), .content-preview :deep(h3) { margin: 16px 0 8px; font-size: 17px; line-height: 1.45; }
-.content-preview :deep(pre) { overflow: auto; padding: 12px; background: #f2f4f7; border-radius: 4px; }
-.content-preview :deep(blockquote) { margin: 12px 0; padding-left: 12px; color: #667085; border-left: 3px solid #91caff; }
+.content-preview :deep(pre) { overflow: auto; padding: 12px; background: var(--n-color-modal); border-radius: 4px; }
+.content-preview :deep(blockquote) { margin: 12px 0; padding-left: 12px; color: inherit; opacity: .72; border-left: 3px solid #91caff; }
 </style>

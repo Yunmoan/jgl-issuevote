@@ -8,8 +8,8 @@
       <n-step title="参与范围" />
       <n-step title="投票规则" />
     </n-steps>
-    <n-alert v-if="manualReviewRequired" type="info" :bordered="false">提交后将进入预审，普通成员或更高权限的其他成员通过后才会公开。</n-alert>
-    <n-alert v-else-if="issueReviewMode === 'ai'" type="info" :bordered="false">点击第一步“下一步”后将自动进行 AI 预审，包括相似议题、法律法规风险和站点自定义条件检查。</n-alert>
+    <n-alert v-if="manualReviewRequired" type="info" :bordered="false" style="margin-bottom: 8px;">提交后将进入预审，普通成员或更高权限的其他成员通过后才会公开。</n-alert>
+    <n-alert v-else-if="issueReviewMode === 'ai'" type="info" :bordered="false" style="margin-bottom: 8px;">点击第一步“下一步”后将自动进行 AI 预审，包括相似议题、法律法规风险和站点自定义条件检查。</n-alert>
     <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
       <n-card v-show="currentStep === 1" title="基本信息" size="large">
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>

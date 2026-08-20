@@ -408,7 +408,7 @@ onMounted(load);
 
 .comment-content {
   margin-top: 10px;
-  color: #344054;
+  color: inherit;
   line-height: 1.75;
   white-space: pre-wrap;
 }
@@ -475,7 +475,7 @@ onMounted(load);
 
 .reply-content {
   margin-top: 5px;
-  color: #344054;
+  color: inherit;
   line-height: 1.7;
 }
 
@@ -527,14 +527,15 @@ onMounted(load);
 .rendered-content :deep(pre) {
   overflow: auto;
   padding: 12px;
-  background: #f2f4f7;
+  background: var(--n-color-modal);
   border-radius: 4px;
 }
 
 .rendered-content :deep(blockquote) {
   margin: 12px 0;
   padding-left: 12px;
-  color: #667085;
+  color: inherit;
+  opacity: .72;
   border-left: 3px solid #91caff;
 }
 

@@ -39,7 +39,7 @@
 
       <n-input v-model:value="q" size="large" clearable placeholder="搜索议题..." @keyup.enter="load">
         <template #prefix>
-          <n-icon color="#8da0bd"><SearchOutline /></n-icon>
+          <n-icon><SearchOutline /></n-icon>
         </template>
       </n-input>
 
@@ -224,14 +224,9 @@ onMounted(() => { load(); loadSiteConfig(); });
   gap: 8px;
 }
 
-.issue-title {
-  color: #101828;
-  font-weight: 600;
-}
+.issue-title { color: inherit; font-weight: 600; }
 
-.issue-meta {
-  color: #667085;
-}
+.issue-meta { color: inherit; opacity: .72; }
 
 .meta-with-icon {
   display: inline-flex;

@@ -11,7 +11,7 @@
     <n-space vertical size="large">
       <n-alert type="info" :bordered="false">不能预审自己提交的议题。驳回时需要说明原因，作者修改后可重新提交。</n-alert>
       <n-input v-model:value="q" size="large" clearable placeholder="搜索待预审议题..." @keyup.enter="load">
-        <template #prefix><n-icon color="#8da0bd"><SearchOutline /></n-icon></template>
+        <template #prefix><n-icon><SearchOutline /></n-icon></template>
       </n-input>
       <n-spin :show="loading">
         <n-empty v-if="items.length === 0" class="empty-state" description="没有待预审议题" />
@@ -141,8 +141,8 @@ watch(() => session.viewer?.id, () => { void load(); }, { immediate: true });
 <style scoped>
 .review-list { display: grid; gap: 12px; }
 .review-item { border-radius: 6px; }
-.review-title { color: #101828; font-weight: 600; }
-.review-meta { color: #667085; font-size: 13px; }
-.review-body { max-height: 240px; overflow: auto; color: #344054; }
+.review-title { color: inherit; font-weight: 600; }
+.review-meta { color: inherit; opacity: .72; font-size: 13px; }
+.review-body { max-height: 240px; overflow: auto; color: inherit; }
 .empty-state { padding: 48px 0; }
 </style>
