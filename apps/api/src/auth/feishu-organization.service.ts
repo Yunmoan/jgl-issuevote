@@ -92,7 +92,10 @@ export class FeishuOrganizationService {
         token,
         {
           department_id: '0',
-          department_id_type: 'open_department_id',
+          // In Feishu, the root node's fixed ID "0" is a department_id, not an
+          // open_department_id. Passing the latter makes the API return only
+          // the root node, which is intentionally excluded below.
+          department_id_type: 'department_id',
           fetch_child: 'true',
           page_size: 50,
           ...(pageToken ? { page_token: pageToken } : {})
