@@ -88,6 +88,7 @@ GET  /api/me
 ```http
 GET    /api/issues
 POST   /api/issues
+POST   /api/issues/ai-review
 GET    /api/issues/reviews
 POST   /api/issues/:number/review
 GET    /api/issues/:number
@@ -100,6 +101,39 @@ POST   /api/issues/:number/archive
 POST   /api/issues/:number/subscribe
 DELETE /api/issues/:number/subscribe
 ```
+
+AI 预审配置仅由管理员在以下接口维护：
+
+```http
+GET    /api/admin/ai-review-settings
+PATCH  /api/admin/ai-review-settings
+POST   /api/admin/ai-review-settings/test
+```
+
+`PATCH /api/admin/ai-review-settings` 使用数据库中的 `ai_review_config` 系统设置，支持：
+
+```json
+{
+  "mode": "ai",
+  "endpoint": "http://127.0.0.1:8000/v1",
+  "model": "Qwen3-8B",
+  "apiKey": "optional-for-local-models",
+  "policyPrompt": "议题必须说明预算来源，且不得包含个人隐私信息。"
+}
+```
+
+`endpoint` 可以填写 OpenAI 兼容 API 的基础地址或完整的 `/chat/completions` 地址。接口不使用供应商私有参数，适用于 Qwen3-8B 的 OpenAI 兼容服务；返回结果要求模型输出 JSON，后端会兼容 Qwen 的思考内容后再解析最终 JSON。
+
+AI 模式下，创建页面第 1 步调用 `POST /api/issues/ai-review`：
+
+```json
+{
+  "title": "是否通过 2026 年预算调整方案",
+  "bodyMd": "议题正文"
+}
+```
+
+响应包含 `approved`、法律法规和自定义条件检查结果、`similarIssues`（最多 5 条）及短时 `reviewToken`。发现相似议题后由创建者确认是否继续；最终 `POST /api/issues` 必须携带未过期且与标题、正文及当前 AI 配置一致的 `aiReviewToken`，因此不能绕过预审。
 
 列表查询参数：
 

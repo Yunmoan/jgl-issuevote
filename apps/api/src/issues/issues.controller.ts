@@ -58,7 +58,15 @@ export class IssuesController {
   async create(@Body() body: unknown, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
     const input = parseIssueInput(createIssueSchema, body);
-    return { data: await this.issues.create(input, viewer) };
+    const aiReviewToken = z.object({ aiReviewToken: z.string().min(20).max(4000).optional() }).parse(body).aiReviewToken;
+    return { data: await this.issues.create(input, viewer, aiReviewToken) };
+  }
+
+  @Post('issues/ai-review')
+  async aiReviewDraft(@Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({ title: z.string().trim().min(3).max(200), bodyMd: z.string().trim().min(1).max(60 * 1024) }).parse(body);
+    return { data: await this.issues.aiReviewDraft(parsed, viewer) };
   }
 
   @Get('issues/reviews')

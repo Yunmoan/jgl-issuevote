@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
 import type { IssueOutcome, IssueVisibility, Viewer, VoteChoice } from '../types';
+import { AiReviewService } from './ai-review.service';
 
 export const createIssueSchema = z.object({
   title: z.string().trim().min(3).max(200),
@@ -51,7 +52,10 @@ function uniqueValues<T>(values: T[]) {
 
 @Injectable()
 export class IssuesService implements OnModuleInit {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(AiReviewService) private readonly aiReview: AiReviewService
+  ) {}
 
   onModuleInit() {
     void this.archiveDueClosedIssues();
@@ -136,11 +140,13 @@ export class IssuesService implements OnModuleInit {
     }));
   }
 
-  async create(input: z.infer<typeof createIssueSchema>, viewer: Viewer) {
+  async create(input: z.infer<typeof createIssueSchema>, viewer: Viewer, aiReviewToken?: string) {
     this.requireIssueSubmitter(viewer);
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
+    const reviewMode = await this.aiReview.mode();
+    if (reviewMode === 'ai') await this.aiReview.verifyReviewToken(aiReviewToken, input, viewer);
     const now = nowSql();
-    const requiresReview = !this.canPublishIssue(viewer);
+    const requiresReview = reviewMode === 'manual' && !this.canPublishIssue(viewer);
     const status = requiresReview ? 'pending_review' : this.initialStatus(input);
     const outcome: IssueOutcome = input.votingEnabled ? 'pending' : 'not_applicable';
     const next = await this.db.first(`SELECT COALESCE(MAX(number), 0) + 1 AS next_number FROM issues`);
@@ -182,7 +188,13 @@ export class IssuesService implements OnModuleInit {
     return this.getByNumber(String(next.next_number), viewer);
   }
 
+  async aiReviewDraft(input: { title: string; bodyMd: string }, viewer: Viewer) {
+    this.requireIssueSubmitter(viewer);
+    return this.aiReview.reviewDraft(input, viewer);
+  }
+
   async reviewQueue(query: Record<string, unknown>, viewer: Viewer) {
+    if (await this.aiReview.mode() !== 'manual') throw new ForbiddenException('当前未启用手动预审');
     this.requireIssueReviewer(viewer);
     const params: Record<string, unknown> = {};
     const conditions = [`i.status = 'pending_review'`];
@@ -216,6 +228,7 @@ export class IssuesService implements OnModuleInit {
   }
 
   async review(number: string, decision: 'approve' | 'reject', note: string | null, viewer: Viewer) {
+    if (await this.aiReview.mode() !== 'manual') throw new ForbiddenException('当前未启用手动预审');
     this.requireIssueReviewer(viewer);
     const issue = await this.db.first(`SELECT * FROM issues WHERE number = :number`, { number });
     if (!issue) throw new NotFoundException('待预审议题不存在');
@@ -562,8 +575,15 @@ export class IssuesService implements OnModuleInit {
     if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
     await this.ensureKnownSelections(input.labelIds, input.viewGroupKeys, input.voteGroupKeys);
     const now = nowSql();
-    const resubmitting = detail.issue.status === 'review_rejected' && !this.canPublishIssue(viewer);
-    const status = resubmitting ? 'pending_review' : this.updatedStatus(detail.issue.status, input);
+    const reviewMode = await this.aiReview.mode();
+    const rejectedIssue = detail.issue.status === 'review_rejected';
+    const resubmitting = rejectedIssue && reviewMode === 'manual' && !this.canPublishIssue(viewer);
+    const releasingRejectedIssue = rejectedIssue && reviewMode !== 'manual';
+    if (rejectedIssue && reviewMode === 'ai') {
+      const aiResult = await this.aiReview.reviewDraft({ title: input.title, bodyMd: input.bodyMd }, viewer);
+      if (!aiResult.approved) throw new ForbiddenException(`AI 预审未通过：${aiResult.summary}`);
+    }
+    const status = resubmitting ? 'pending_review' : releasingRejectedIssue ? this.initialStatus(input) : this.updatedStatus(detail.issue.status, input);
     const outcome = !input.votingEnabled ? 'not_applicable' : detail.issue.status === 'closed' && input.passRule === 'custom' ? 'manual_required' : detail.issue.outcome;
     await this.db.exec(
       `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
@@ -572,12 +592,12 @@ export class IssuesService implements OnModuleInit {
        quorum_count = :quorumCount, pass_rule = :passRule, custom_pass_rule_json = :customPassRule, status = :status, outcome = :outcome,
        outcome_confirmed_by = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_by ELSE NULL END,
        outcome_confirmed_at = CASE WHEN :outcome = 'manual_required' THEN outcome_confirmed_at ELSE NULL END,
-       reviewed_by = CASE WHEN :status = 'pending_review' THEN NULL ELSE reviewed_by END,
-       reviewed_at = CASE WHEN :status = 'pending_review' THEN NULL ELSE reviewed_at END,
-       review_note = CASE WHEN :status = 'pending_review' THEN NULL ELSE review_note END,
+       reviewed_by = CASE WHEN :clearReview = 1 THEN NULL ELSE reviewed_by END,
+       reviewed_at = CASE WHEN :clearReview = 1 THEN NULL ELSE reviewed_at END,
+       review_note = CASE WHEN :clearReview = 1 THEN NULL ELSE review_note END,
        content_edited_at = :now, updated_at = :now
        WHERE id = :issueId`,
-      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), votingEnabled: input.votingEnabled, voteStartsAt: toSqlDate(input.votingEnabled ? input.voteStartsAt || null : null), voteEndsAt: toSqlDate(input.votingEnabled ? input.voteEndsAt || null : null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, customPassRule: input.passRule === 'custom' ? JSON.stringify({ description: input.customPassRule }) : null, status, outcome, now, issueId: detail.issue.id }
+      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), votingEnabled: input.votingEnabled, voteStartsAt: toSqlDate(input.votingEnabled ? input.voteStartsAt || null : null), voteEndsAt: toSqlDate(input.votingEnabled ? input.voteEndsAt || null : null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, customPassRule: input.passRule === 'custom' ? JSON.stringify({ description: input.customPassRule }) : null, status, outcome, clearReview: (resubmitting || releasingRejectedIssue) ? 1 : 0, now, issueId: detail.issue.id }
     );
     await this.replaceLabels(detail.issue.id, input.labelIds);
     await this.replaceIssueGroups('issue_view_groups', detail.issue.id, input.viewGroupKeys);

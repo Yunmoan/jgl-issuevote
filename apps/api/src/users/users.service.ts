@@ -138,7 +138,7 @@ export class UsersService {
     const rows = await this.db.rows(`SELECT setting_key, setting_value, updated_at FROM system_settings ORDER BY setting_key`);
     return rows.map((row) => ({
       key: row.setting_key,
-      value: safeJson(row.setting_value),
+      value: row.setting_key === 'ai_review_config' ? maskedAiReviewConfig(row.setting_value) : safeJson(row.setting_value),
       updatedAt: row.updated_at
     }));
   }
@@ -146,7 +146,7 @@ export class UsersService {
   async publicSiteConfig() {
     const rows = await this.db.rows(
       `SELECT setting_key, setting_value FROM system_settings
-       WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode')`
+       WHERE setting_key IN ('site_name', 'site_description', 'site_notice', 'default_issue_visibility', 'footer_text', 'watermark_mode', 'ai_review_config')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, safeJson(row.setting_value)]));
     const siteName = typeof values.site_name === 'string' && values.site_name.trim() ? values.site_name.trim() : '冀高联事项';
@@ -156,12 +156,14 @@ export class UsersService {
       siteNotice: typeof values.site_notice === 'string' ? values.site_notice : '',
       defaultIssueVisibility: ['public', 'login', 'groups'].includes(String(values.default_issue_visibility)) ? values.default_issue_visibility : 'login',
       footerText: typeof values.footer_text === 'string' && values.footer_text.trim() ? values.footer_text.trim() : `版权所有 © ${new Date().getFullYear()} ${siteName}`,
-      watermarkMode: ['off', 'global', 'issue'].includes(String(values.watermark_mode)) ? values.watermark_mode : 'off'
+      watermarkMode: ['off', 'global', 'issue'].includes(String(values.watermark_mode)) ? values.watermark_mode : 'off',
+      issueReviewMode: reviewMode(values.ai_review_config)
     };
   }
 
   async setSetting(key: string, value: unknown, actor: Viewer) {
     this.requireAdmin(actor);
+    if (key === 'ai_review_config') throw new ForbiddenException('请使用 AI 预审设置接口更新该配置');
     await this.db.exec(
       `INSERT INTO system_settings (setting_key, setting_value, updated_by, updated_at)
        VALUES (:key, :value, :actorId, :now)
@@ -208,4 +210,17 @@ function safeJson(value: string | null) {
   } catch {
     return value;
   }
+}
+
+function reviewMode(value: unknown) {
+  if (!value || typeof value !== 'object') return 'manual';
+  const mode = (value as Record<string, unknown>).mode;
+  return ['disabled', 'manual', 'ai'].includes(String(mode)) ? mode : 'manual';
+}
+
+function maskedAiReviewConfig(value: string | null) {
+  const config = safeJson(value);
+  if (!config || typeof config !== 'object') return { mode: 'manual', apiKeyConfigured: false };
+  const { apiKey: _apiKey, ...safe } = config as Record<string, unknown>;
+  return { ...safe, apiKeyConfigured: Boolean(_apiKey) };
 }

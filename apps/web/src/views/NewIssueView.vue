@@ -1,19 +1,23 @@
 <template>
   <main class="content-wrap form-page">
     <div class="page-title">
-      <div><h1>{{ session.canPublishIssue ? '创建议题' : '提交议题' }}</h1><p class="page-subtitle">清晰说明议题，并设置讨论与表决的参与范围。</p></div>
+      <div><h1>{{ manualReviewRequired ? '提交议题' : '创建议题' }}</h1><p class="page-subtitle">清晰说明议题，并设置讨论与表决的参与范围。</p></div>
     </div>
     <n-steps :current="currentStep" size="small" class="issue-steps">
       <n-step title="基本信息" />
       <n-step title="参与范围" />
       <n-step title="投票规则" />
     </n-steps>
-    <n-alert v-if="!session.canPublishIssue" type="info" :bordered="false">提交后将进入预审，普通成员或更高权限的其他成员通过后才会公开。</n-alert>
+    <n-alert v-if="manualReviewRequired" type="info" :bordered="false">提交后将进入预审，普通成员或更高权限的其他成员通过后才会公开。</n-alert>
+    <n-alert v-else-if="issueReviewMode === 'ai'" type="info" :bordered="false">点击第一步“下一步”后将自动进行 AI 预审，包括相似议题、法律法规风险和站点自定义条件检查。</n-alert>
     <n-form ref="formRef" :model="form" :rules="rules" label-placement="top" size="large">
       <n-card v-show="currentStep === 1" title="基本信息" size="large">
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count placeholder="用一句话概括需要表决的事项" /></n-form-item>
         <n-form-item label="议题说明" path="bodyMd"><ContentEditor v-model="form.bodyMd" :min-rows="9" placeholder="说明背景、可选方案、执行影响或需要讨论的重点。支持 Markdown、图片与基本富文本。" /></n-form-item>
         <n-form-item label="分类"><n-select v-model:value="form.labelIds" multiple :options="labelOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="选择议题分类" /></n-form-item>
+        <n-alert v-if="aiReview" :type="aiReview.approved ? 'success' : 'error'" :bordered="false" :title="aiReview.approved ? 'AI 预审通过' : 'AI 预审未通过'">
+          <n-space vertical :size="8"><span>{{ aiReview.summary }}</span><n-text>法律法规检查：{{ aiReview.legal.passed ? '通过' : '未通过' }}，{{ aiReview.legal.reason }}</n-text><n-text>自定义条件检查：{{ aiReview.policy.passed ? '通过' : '未通过' }}，{{ aiReview.policy.reason }}</n-text><n-text v-for="risk in aiReview.risks" :key="risk" depth="3">{{ risk }}</n-text><n-space v-if="aiReview.similarIssues.length" vertical :size="4"><n-text strong>可能相似的已存在议题</n-text><n-button v-for="issue in aiReview.similarIssues" :key="issue.number" text type="primary" @click="router.push(`/issues/${issue.number}`)">#{{ issue.number }} {{ issue.title }}</n-button></n-space></n-space>
+        </n-alert>
       </n-card>
 
       <n-alert v-if="optionsError" type="error" :bordered="false" title="无法读取创建议题所需的配置">
@@ -54,19 +58,23 @@
         <n-space justify="end">
           <n-button v-if="currentStep === 1" @click="router.push('/')">取消</n-button>
           <n-button v-else @click="currentStep -= 1"><template #icon><n-icon><ArrowBackOutline /></n-icon></template>上一步</n-button>
-          <n-button v-if="currentStep < 3" type="primary" @click="nextStep">下一步<template #icon><n-icon><ArrowForwardOutline /></n-icon></template></n-button>
-          <n-button v-else type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>{{ session.canPublishIssue ? '发布议题' : '提交预审' }}</n-button>
+          <n-button v-if="currentStep < 3" type="primary" :loading="currentStep === 1 && aiReviewing" @click="nextStep">下一步<template #icon><n-icon><ArrowForwardOutline /></n-icon></template></n-button>
+          <n-button v-else type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>{{ manualReviewRequired ? '提交预审' : '发布议题' }}</n-button>
         </n-space>
       </n-card>
     </n-form>
+    <n-modal v-model:show="showSimilarIssueDialog" preset="card" title="发现相似议题" :style="{ width: 'min(620px, calc(100vw - 24px))' }" :bordered="false">
+      <n-space vertical size="large"><n-text>系统找到以下最多 5 个相似议题。确认后仍可继续创建当前议题。</n-text><n-space vertical :size="8"><n-button v-for="issue in aiReview?.similarIssues || []" :key="issue.number" secondary @click="router.push(`/issues/${issue.number}`)">#{{ issue.number }} {{ issue.title }}</n-button></n-space></n-space>
+      <template #footer><n-space justify="end"><n-button @click="showSimilarIssueDialog = false">返回修改</n-button><n-button type="primary" @click="continueAfterSimilarIssues">继续创建</n-button></n-space></template>
+    </n-modal>
   </main>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline, ArrowBackOutline, ArrowForwardOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NModal, NSelect, NSpace, NStep, NSteps, NText, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
@@ -83,6 +91,11 @@ const labelOptions = ref<Array<{ label: string; value: number }>>([]);
 const loadingOptions = ref(false);
 const formOptionsReady = ref(false);
 const optionsError = ref('');
+const issueReviewMode = ref<'disabled' | 'manual' | 'ai'>('manual');
+const aiReviewing = ref(false);
+const aiReviewToken = ref<string | null>(null);
+const showSimilarIssueDialog = ref(false);
+const aiReview = ref<null | { approved: boolean; summary: string; legal: { passed: boolean; reason: string }; policy: { passed: boolean; reason: string }; risks: string[]; similarIssues: Array<{ number: number; title: string; status: string; updatedAt: string }>; reviewToken: string | null }>(null);
 const commentPublishAt = ref<number | null>(null);
 const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
@@ -92,9 +105,34 @@ const rules: FormRules = { title: [{ required: true, min: 3, message: '议题标
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
 const passRuleOptions = [{ label: '简单多数通过', value: 'simple_majority' }, { label: '三分之二多数通过', value: 'two_thirds' }, { label: '自定义规则', value: 'custom' }];
+const manualReviewRequired = computed(() => issueReviewMode.value === 'manual' && !session.canPublishIssue);
 
 async function nextStep() {
-  if (currentStep.value === 1) await formRef.value?.validate();
+  if (currentStep.value === 1) {
+    await formRef.value?.validate();
+    if (issueReviewMode.value === 'ai' && !await runAiReview()) return;
+  }
+  currentStep.value += 1;
+}
+
+async function runAiReview() {
+  aiReviewing.value = true;
+  try {
+    const result = await apiPost<typeof aiReview.value>('/issues/ai-review', { title: form.title.trim(), bodyMd: form.bodyMd.trim() });
+    aiReview.value = result;
+    aiReviewToken.value = result?.reviewToken || null;
+    if (!result?.approved) { message.error('AI 预审未通过，请根据提示修改议题'); return false; }
+    if (result.similarIssues.length) { showSimilarIssueDialog.value = true; return false; }
+    return true;
+  } catch (error) {
+    message.error(error instanceof Error ? `AI 预审失败：${error.message}` : 'AI 预审失败，请稍后重试');
+    return false;
+  } finally { aiReviewing.value = false; }
+}
+
+function continueAfterSimilarIssues() {
+  if (!aiReviewToken.value) return;
+  showSimilarIssueDialog.value = false;
   currentStep.value += 1;
 }
 
@@ -102,6 +140,11 @@ async function submit() {
   await formRef.value?.validate();
   if (!formOptionsReady.value) {
     message.error('创建配置尚未准备完成，请稍后重试');
+    return;
+  }
+  if (issueReviewMode.value === 'ai' && !aiReviewToken.value) {
+    message.error('请返回第一步完成 AI 预审');
+    currentStep.value = 1;
     return;
   }
   submitting.value = true;
@@ -114,9 +157,10 @@ async function submit() {
       commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null,
       commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null,
       voteStartsAt: form.votingEnabled && voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
-      voteEndsAt: form.votingEnabled && voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null
+      voteEndsAt: form.votingEnabled && voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null,
+      aiReviewToken: aiReviewToken.value || undefined
     });
-    message.success(session.canPublishIssue ? '议题已发布' : '议题已提交，等待预审'); router.push(`/issues/${detail.issue.number}`);
+    message.success(manualReviewRequired.value ? '议题已提交，等待预审' : '议题已发布'); router.push(`/issues/${detail.issue.number}`);
   } catch (error) {
     message.error(error instanceof Error ? `发布失败：${error.message}` : '发布失败，请稍后重试');
   } finally { submitting.value = false; }
@@ -126,10 +170,11 @@ async function loadFormOptions() {
   loadingOptions.value = true;
   optionsError.value = '';
   try {
-    const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups' }>('/site-config')]);
+    const [groups, labels, config] = await Promise.all([apiGet<Array<{ groupKey: string; name: string }>>('/permission-groups'), apiGet<Array<{ id: number; name: string }>>('/labels'), apiGet<{ defaultIssueVisibility: 'public' | 'login' | 'groups'; issueReviewMode?: 'disabled' | 'manual' | 'ai' }>('/site-config')]);
     groupOptions.value = groups.map((group) => ({ label: group.name, value: group.groupKey }));
     labelOptions.value = labels.map((label) => ({ label: label.name, value: Number(label.id) }));
     form.visibility = config.defaultIssueVisibility;
+    issueReviewMode.value = config.issueReviewMode || 'manual';
     formOptionsReady.value = true;
   } catch (error) {
     formOptionsReady.value = false;
@@ -153,6 +198,12 @@ watch(() => form.votingEnabled, (enabled) => {
     voteStartsAt.value = null;
     voteEndsAt.value = null;
   }
+});
+
+watch(() => [form.title, form.bodyMd], () => {
+  aiReviewToken.value = null;
+  aiReview.value = null;
+  showSimilarIssueDialog.value = false;
 });
 </script>
 

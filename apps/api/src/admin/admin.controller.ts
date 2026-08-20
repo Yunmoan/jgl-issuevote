@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req }
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
+import { AiReviewService } from '../issues/ai-review.service';
 import { IssuesService } from '../issues/issues.service';
 import { UsersService } from '../users/users.service';
 
@@ -10,7 +11,8 @@ export class AdminController {
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(UsersService) private readonly users: UsersService,
-    @Inject(IssuesService) private readonly issues: IssuesService
+    @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(AiReviewService) private readonly aiReview: AiReviewService
   ) {}
 
   @Get('users')
@@ -105,6 +107,28 @@ export class AdminController {
     return { data: await this.users.setSetting(parsed.key, parsed.value, viewer) };
   }
 
+  @Get('ai-review-settings')
+  async aiReviewSettings(@Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    this.users.requireAdmin(viewer);
+    return { data: await this.aiReview.adminSettings() };
+  }
+
+  @Patch('ai-review-settings')
+  async updateAiReviewSettings(@Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    this.users.requireAdmin(viewer);
+    const parsed = aiReviewSettingsSchema.parse(body);
+    return { data: await this.aiReview.updateSettings(parsed, viewer) };
+  }
+
+  @Post('ai-review-settings/test')
+  async testAiReviewSettings(@Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    this.users.requireAdmin(viewer);
+    return { data: await this.aiReview.testConnection() };
+  }
+
   @Get('audit-logs')
   async auditLogs(@Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
@@ -125,4 +149,12 @@ const labelSchema = z.object({
   name: z.string().min(1).max(40),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   description: z.string().max(200).nullable().optional()
+});
+const aiReviewSettingsSchema = z.object({
+  mode: z.enum(['disabled', 'manual', 'ai']),
+  endpoint: z.string().trim().max(500).default(''),
+  model: z.string().trim().max(160).default('Qwen3-8B'),
+  apiKey: z.string().max(2000).optional(),
+  clearApiKey: z.boolean().optional(),
+  policyPrompt: z.string().trim().max(6000).default('')
 });

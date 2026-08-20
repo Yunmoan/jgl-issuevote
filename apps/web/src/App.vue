@@ -66,6 +66,7 @@ const router = useRouter();
 const siteName = ref('冀高联事项');
 const footerText = ref(`版权所有 © ${new Date().getFullYear()} 冀高联事项`);
 const watermarkMode = ref<WatermarkMode>('off');
+const issueReviewMode = ref<'disabled' | 'manual' | 'ai'>('manual');
 const showMobileNav = ref(false);
 const routeLoading = ref(false);
 const prefersDark = ref(false);
@@ -85,7 +86,7 @@ function icon(component: any) { return () => h(NIcon, null, { default: () => h(c
 const menuOptions = computed<MenuOption[]>(() => {
   const options: MenuOption[] = [{ label: '议题', key: '/', icon: icon(DocumentTextOutline) }];
   if (session.canCreateIssue) options.push({ label: '创建议题', key: '/issues/new', icon: icon(CreateOutline) });
-  if (session.canReviewIssueSubmissions) options.push({ label: '预审', key: '/reviews', icon: icon(ClipboardOutline) });
+  if (issueReviewMode.value === 'manual' && session.canReviewIssueSubmissions) options.push({ label: '预审', key: '/reviews', icon: icon(ClipboardOutline) });
   if (session.isAdmin) options.push({ label: '管理', key: '/admin', icon: icon(SettingsOutline) });
   if (session.viewer) options.push({ label: '个人中心', key: '/me', icon: icon(PersonOutline) });
   return options;
@@ -98,13 +99,14 @@ function cycleTheme() { setTheme(themePreference.value === 'system' ? 'light' : 
 function readThemePreference(): ThemePreference { const value = localStorage.getItem('jgl-theme-preference'); return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'; }
 async function loadSiteConfig() {
   try {
-    const config = await apiGet<{ siteName: string; footerText?: string; watermarkMode?: WatermarkMode }>('/site-config');
+    const config = await apiGet<{ siteName: string; footerText?: string; watermarkMode?: WatermarkMode; issueReviewMode?: 'disabled' | 'manual' | 'ai' }>('/site-config');
     siteName.value = config.siteName;
     footerText.value = config.footerText || footerText.value;
     watermarkMode.value = config.watermarkMode || 'off';
+    issueReviewMode.value = config.issueReviewMode || 'manual';
   } catch { /* A config failure must not block rendering. */ }
 }
-function updateSiteConfig(event: Event) { const value = (event as CustomEvent<Partial<{ siteName: string; footerText: string; watermarkMode: WatermarkMode }>>).detail; if (value?.siteName?.trim()) siteName.value = value.siteName.trim(); if (typeof value?.footerText === 'string') footerText.value = value.footerText.trim() || `版权所有 © ${new Date().getFullYear()} ${siteName.value}`; if (value?.watermarkMode) watermarkMode.value = value.watermarkMode; }
+function updateSiteConfig(event: Event) { const value = (event as CustomEvent<Partial<{ siteName: string; footerText: string; watermarkMode: WatermarkMode; issueReviewMode: 'disabled' | 'manual' | 'ai' }>>).detail; if (value?.siteName?.trim()) siteName.value = value.siteName.trim(); if (typeof value?.footerText === 'string') footerText.value = value.footerText.trim() || `版权所有 © ${new Date().getFullYear()} ${siteName.value}`; if (value?.watermarkMode) watermarkMode.value = value.watermarkMode; if (value?.issueReviewMode) issueReviewMode.value = value.issueReviewMode; }
 function updateSystemTheme(event: MediaQueryListEvent) { prefersDark.value = event.matches; }
 const removeBeforeNavigation = router.beforeEach(() => {
   if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer);
