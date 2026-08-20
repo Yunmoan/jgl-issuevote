@@ -51,6 +51,7 @@ FEISHU_ENABLED=true
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 FEISHU_ALLOWED_TENANT_KEYS=
+FEISHU_WEB_SDK_URL=https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js
 
 NYK_ENABLED=true
 NYK_OAUTH_AUTHORIZATION_URL=https://account.naids.com/oauth2/authorize
@@ -60,6 +61,8 @@ NYK_OAUTH_CLIENT_ID=
 NYK_OAUTH_CLIENT_SECRET=
 NYK_OAUTH_REDIRECT_URI=https://vote.example.com/api/auth/natayarkid/callback
 ```
+
+飞书网页应用还必须在开发者后台将实际页面地址登记到 **安全设置 > 重定向 URL**。例如站点首页为 `https://vote.example.com/` 时，应填写该完整 URL；缺失或路径不一致时，客户端无法取得免登 code。
 
 ## 目录与账号
 

@@ -28,12 +28,12 @@
 
 ## 飞书网页应用免登
 
-根据飞书官方示例，网页应用前端需要在飞书客户端环境中通过 JSAPI 获取临时授权码 code，服务端再使用 App ID/App Secret 获取应用访问凭证，并用 code 换取用户访问凭证和用户信息。飞书文档同时提示，普通客户端 `getUserInfo` 对网页应用可取字段有限；需要 open_id、user_access_token 或敏感字段时应走服务端免登流程。
+根据飞书官方示例，网页应用前端需要在飞书客户端环境中加载 H5 JSSDK，并在 `window.h5sdk.ready` 回调中通过 JSAPI 获取临时授权码 code。服务端再使用 App ID/App Secret 获取应用访问凭证，并用 code 换取用户访问凭证和用户信息。飞书文档同时提示，普通客户端 `getUserInfo` 对网页应用可取字段有限；需要 open_id、user_access_token 或敏感字段时应走服务端免登流程。
 
 流程：
 
-1. 前端检测 `window.h5sdk` 和飞书 WebView 环境。
-2. 前端调用飞书 JSAPI `requestAccess` 或兼容方法取得临时 code。
+1. 前端加载飞书 H5 JSSDK：`https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js`。
+2. 在 `window.h5sdk.ready` 回调中调用 `tt.requestAccess({ scopeList: [], appID })` 取得临时 code；`scopeList` 为空时只申请登录所需凭证，不会额外申请权限。旧客户端回退到 `tt.requestAuthCode`。
 3. 前端 POST `/api/auth/feishu/code`，只传 code，不传 App Secret。
 4. 后端缓存 `app_access_token`。
 5. 后端调用飞书接口用 code 换取 `user_access_token`。
@@ -43,8 +43,10 @@
 
 注意：
 
-- code 只能短时使用，服务端失败后前端应重新取 code。
+- code 只能短时使用且只能使用一次，服务端失败后前端应重新取 code。
 - App Secret 只存在后端环境变量。
+- 飞书开发者后台的 **安全设置 > 重定向 URL** 必须包含实际网页地址。例如首页为 `https://issue-vote.hbutu.cn/` 时，应登记该完整路径（不含查询串和 `#`）。
+- `FEISHU_WEB_SDK_URL` 可以覆盖 SDK 地址；旧值 `https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js` 已失效，应用会自动回退到当前默认地址。
 - 飞书 user_id/open_id/union_id 含义不同，`auth_identities.provider_subject` 建议优先使用 `union_id`，没有时使用 `open_id`。
 - 如果需要组织架构校验，应申请通讯录相关权限，并处理飞书权限范围不足的错误。
 

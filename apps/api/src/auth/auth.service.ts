@@ -9,6 +9,8 @@ import { nowSql } from '../db/sql-time';
 import type { Provider, Viewer } from '../types';
 
 const SESSION_COOKIE = 'jgl_session';
+const DEFAULT_FEISHU_WEB_SDK_URL = 'https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js';
+const REMOVED_FEISHU_WEB_SDK_URL = 'https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js';
 const NYK_STATE_COOKIE = 'nyk_oauth_state';
 const NYK_LINK_USER_COOKIE = 'nyk_oauth_link_user';
 
@@ -22,7 +24,7 @@ export class AuthService {
         enabled: process.env.FEISHU_ENABLED === 'true',
         autoLogin: process.env.FEISHU_ENABLED === 'true' && Boolean(process.env.FEISHU_APP_ID),
         appId: process.env.FEISHU_ENABLED === 'true' ? process.env.FEISHU_APP_ID || null : null,
-        sdkUrl: process.env.FEISHU_WEB_SDK_URL || 'https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js'
+        sdkUrl: feishuWebSdkUrl()
       },
       natayarkid: {
         enabled: process.env.NYK_ENABLED !== 'false',
@@ -211,6 +213,9 @@ export class AuthService {
     if (process.env.FEISHU_ENABLED !== 'true') throw new UnauthorizedException('飞书登录未启用');
     const appId = requiredEnv('FEISHU_APP_ID');
     const appSecret = requiredEnv('FEISHU_APP_SECRET');
+    // H5 requestAccess/requestAuthCode returns a login-free code. Feishu's
+    // current Web App guide exchanges this specific code with v1 and an
+    // app_access_token; it is different from the browser OAuth v3 redirect flow.
     const appTokenResponse = await axios.post('https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal', {
       app_id: appId,
       app_secret: appSecret
@@ -450,6 +455,15 @@ export class AuthService {
       throw new UnauthorizedException('飞书组织不在允许范围内');
     }
   }
+}
+
+function feishuWebSdkUrl() {
+  const configured = process.env.FEISHU_WEB_SDK_URL?.trim();
+  // This former default now returns 404. Treat it as unset so inherited .env
+  // files are repaired by an application restart rather than failing forever.
+  return !configured || configured === REMOVED_FEISHU_WEB_SDK_URL
+    ? DEFAULT_FEISHU_WEB_SDK_URL
+    : configured;
 }
 
 function cookieOptions(maxAge: number) {

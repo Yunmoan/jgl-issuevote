@@ -104,6 +104,7 @@ FEISHU_ENABLED=true
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 FEISHU_ALLOWED_TENANT_KEYS=
+FEISHU_WEB_SDK_URL=https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js
 
 NYK_ENABLED=true
 NYK_OAUTH_AUTHORIZATION_URL=https://account.naids.com/oauth2/authorize

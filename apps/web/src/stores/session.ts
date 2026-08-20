@@ -56,7 +56,7 @@ export const useSessionStore = defineStore('session', {
       feishuAutoLoginAttempted = true;
       try {
         await loadFeishuSdk(feishu.sdkUrl);
-        await waitForFeishuSdkReady();
+        if (!await waitForFeishuSdkReady()) return;
         const code = await requestFeishuAuthCode(feishu.appId);
         if (code) this.viewer = await apiPost<Viewer>(this.viewer ? '/auth/feishu/bind-code' : '/auth/feishu/code', { code });
       } catch (error) {
@@ -77,14 +77,21 @@ let feishuSdkPromise: Promise<void> | null = null;
 
 declare global {
   interface Window {
-    tt?: { requestAuthCode?: (options: { appId: string; success: (result: { code?: string }) => void; fail?: (error: unknown) => void }) => void };
-    h5sdk?: { ready?: (callback: () => void) => void; biz?: { util?: { getAuthCode?: (options: { appId: string; onSuccess: (result: { code?: string }) => void; onFail?: (error: unknown) => void }) => void } } };
+    tt?: {
+      requestAccess?: (options: { scopeList: string[]; appID: string; success: (result: { code?: string }) => void; fail: (error: unknown) => void }) => void;
+      requestAuthCode?: (options: { appId: string; success: (result: { code?: string }) => void; fail: (error: unknown) => void }) => void;
+    };
+    h5sdk?: { ready?: (callback: () => void) => void };
   }
+}
+
+function hasFeishuAuthApi() {
+  return Boolean(window.tt?.requestAccess || window.tt?.requestAuthCode);
 }
 
 function loadFeishuSdk(src?: string) {
   if (feishuSdkPromise) return feishuSdkPromise;
-  if (window.tt?.requestAuthCode) return Promise.resolve();
+  if (hasFeishuAuthApi()) return Promise.resolve();
   if (!src) return Promise.reject(new Error('飞书 SDK 地址未配置'));
   feishuSdkPromise = new Promise<void>((resolve, reject) => {
     const onLoaded = () => {
@@ -92,28 +99,40 @@ function loadFeishuSdk(src?: string) {
       if (script) script.dataset.feishuSdkLoaded = 'true';
       resolve();
     };
+    const onError = (script: HTMLScriptElement) => {
+      script.remove();
+      feishuSdkPromise = null;
+      reject(new Error(`飞书 SDK 加载失败：${src}`));
+    };
     const existing = document.querySelector<HTMLScriptElement>('script[data-feishu-sdk]');
     if (existing) {
       if (existing.dataset.feishuSdkLoaded === 'true' || window.h5sdk) { onLoaded(); return; }
       existing.addEventListener('load', onLoaded, { once: true });
-      existing.addEventListener('error', () => reject(new Error('飞书 SDK 加载失败')), { once: true });
+      existing.addEventListener('error', () => onError(existing), { once: true });
       return;
     }
-    const script = document.createElement('script'); script.src = src; script.async = true; script.dataset.feishuSdk = 'true'; script.onload = onLoaded; script.onerror = () => reject(new Error('飞书 SDK 加载失败')); document.head.appendChild(script);
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset.feishuSdk = 'true';
+    script.onload = onLoaded;
+    script.onerror = () => onError(script);
+    document.head.appendChild(script);
   });
   return feishuSdkPromise;
 }
 
 function waitForFeishuSdkReady() {
-  const h5sdk = window.h5sdk;
-  if (window.tt?.requestAuthCode || !h5sdk?.ready) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    const timeout = window.setTimeout(resolve, 3000);
+  const ready = window.h5sdk?.ready;
+  // The official JSAPI requires requestAccess/requestAuthCode to run in ready().
+  if (!ready) return Promise.resolve(hasFeishuAuthApi());
+  return new Promise<boolean>((resolve) => {
+    const timeout = window.setTimeout(() => resolve(false), 10000);
     try {
-      h5sdk.ready?.(() => { window.clearTimeout(timeout); resolve(); });
+      ready(() => { window.clearTimeout(timeout); resolve(true); });
     } catch {
       window.clearTimeout(timeout);
-      resolve();
+      resolve(false);
     }
   });
 }
@@ -121,9 +140,21 @@ function waitForFeishuSdkReady() {
 function requestFeishuAuthCode(appId: string) {
   return new Promise<string>((resolve, reject) => {
     const success = (result: { code?: string }) => result.code ? resolve(result.code) : reject(new Error('飞书未返回授权码'));
-    const fail = (error: unknown) => reject(error);
-    if (window.tt?.requestAuthCode) { window.tt.requestAuthCode({ appId, success, fail }); return; }
-    if (window.h5sdk?.biz?.util?.getAuthCode) { window.h5sdk.biz.util.getAuthCode({ appId, onSuccess: success, onFail: fail }); return; }
+    const requestLegacyCode = () => {
+      if (!window.tt?.requestAuthCode) return false;
+      window.tt.requestAuthCode({ appId, success, fail: reject });
+      return true;
+    };
+    const fail = (error: unknown) => {
+      // requestAccess was introduced in newer clients. errno 103 means the
+      // current client cannot use it, for which Feishu specifies this fallback.
+      if (typeof error === 'object' && error !== null && 'errno' in error && error.errno === 103 && requestLegacyCode()) return;
+      reject(error);
+    };
+    // requestAccess is the current API. An empty scope list only obtains the
+    // one-time login code, so the user is not prompted for additional scopes.
+    if (window.tt?.requestAccess) { window.tt.requestAccess({ scopeList: [], appID: appId, success, fail }); return; }
+    if (requestLegacyCode()) return;
     reject(new Error('飞书授权接口不可用'));
   });
 }
