@@ -16,6 +16,7 @@
           <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="form.viewGroupKeys" multiple :options="groupOptions" :disabled="form.visibility !== 'groups'" placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
         </n-grid>
         <n-alert type="info" :bordered="false">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-alert>
       </n-card>
@@ -30,7 +31,9 @@
         <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许修改自己的选择</n-checkbox></n-space>
       </n-card>
 
-      <n-affix :bottom="0"><div class="form-actions"><n-space justify="end"><n-button @click="router.push('/')">取消</n-button><n-button type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>发布议题</n-button></n-space></div></n-affix>
+      <n-card size="small" class="form-footer">
+        <n-space justify="end"><n-button @click="router.push('/')">取消</n-button><n-button type="primary" :loading="submitting" @click="submit"><template #icon><n-icon><AddCircleOutline /></n-icon></template>发布议题</n-button></n-space>
+      </n-card>
     </n-form>
   </main>
 </template>
@@ -39,7 +42,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline } from '@vicons/ionicons5';
-import { NAffix, NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NSelect, NSpace, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NSelect, NSpace, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
@@ -51,6 +54,7 @@ const submitting = ref(false);
 const groupOptions = ref<Array<{ label: string; value: string }>>([]);
 const labelOptions = ref<Array<{ label: string; value: number }>>([]);
 const commentPublishAt = ref<number | null>(null);
+const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
 const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, passRule: 'simple_majority' });
@@ -63,7 +67,7 @@ async function submit() {
   await formRef.value?.validate();
   submitting.value = true;
   try {
-    const detail = await apiPost<any>('/issues', { ...form, commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null, voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null, voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null });
+    const detail = await apiPost<any>('/issues', { ...form, commentPublishAt: commentPublishAt.value ? new Date(commentPublishAt.value).toISOString() : null, commentEndsAt: commentEndsAt.value ? new Date(commentEndsAt.value).toISOString() : null, voteStartsAt: voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null, voteEndsAt: voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null });
     message.success('议题已发布'); router.push(`/issues/${detail.issue.number}`);
   } finally { submitting.value = false; }
 }
@@ -82,6 +86,6 @@ onMounted(async () => {
 <style scoped>
 .form-page :deep(.n-form) { display: grid; gap: 20px; }
 .form-card { margin: 0; }
-.form-actions { display: flex; justify-content: flex-end; padding: 14px 0; background: rgba(246, 248, 251, 0.94); backdrop-filter: blur(10px); }
-@media (max-width: 480px) { .form-actions { justify-content: stretch; } .form-actions :deep(.n-space) { width: 100%; } .form-actions :deep(.n-button) { flex: 1; } }
+.form-footer { margin-bottom: 24px; }
+@media (max-width: 480px) { .form-footer :deep(.n-space) { width: 100%; } .form-footer :deep(.n-button) { flex: 1; } }
 </style>

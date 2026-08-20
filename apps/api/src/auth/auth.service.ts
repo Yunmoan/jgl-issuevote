@@ -258,6 +258,22 @@ export class AuthService {
     );
     const now = nowSql();
     let userId = existing?.user_id;
+    let createdIdentity = false;
+
+    // A provider identity always remains the primary lookup key. When it is new,
+    // an exact email match on the other provider lets a user continue with one account.
+    if (!userId && input.email) {
+      const matchingAccount = await this.findCompatibleAccount(input.provider, input.email);
+      if (matchingAccount) {
+        userId = matchingAccount.id;
+        await this.insertIdentity(userId, input, now);
+        createdIdentity = true;
+        await this.audit(String(userId), 'identity.auto_link', 'user', String(userId), {
+          provider: input.provider,
+          matchedBy: 'email'
+        });
+      }
+    }
     if (!userId) {
       const created = await this.db.exec(
         `INSERT INTO users (display_name, avatar_url, email, status, primary_provider, last_login_at, created_at, updated_at)
@@ -271,44 +287,28 @@ export class AuthService {
         }
       );
       userId = created.insertId;
-      await this.db.exec(
-        `INSERT INTO auth_identities
-         (user_id, provider, provider_subject, tenant_key, open_id, union_id, provider_user_id, email, display_name, avatar_url, raw_profile_json, linked_at, last_used_at)
-         VALUES (:userId, :provider, :subject, :tenantKey, :openId, :unionId, :providerUserId, :email, :displayName, :avatarUrl, :profile, :now, :now)`,
-        {
-          userId,
-          provider: input.provider,
-          subject: input.providerSubject,
-          tenantKey: input.tenantKey || null,
-          openId: input.openId || null,
-          unionId: input.unionId || null,
-          providerUserId: input.providerUserId || null,
-          email: input.email,
-          displayName: input.displayName,
-          avatarUrl: input.avatarUrl || null,
-          profile: JSON.stringify(input.rawProfile),
-          now
-        }
-      );
+      await this.insertIdentity(userId, input, now);
+      createdIdentity = true;
     } else {
       await this.db.exec(
-        `UPDATE users SET display_name = :displayName, avatar_url = :avatarUrl, email = :email, last_login_at = :now, updated_at = :now WHERE id = :userId`,
-        { userId, displayName: input.displayName, avatarUrl: input.avatarUrl || null, email: input.email, now }
-      );
-      await this.db.exec(
-        `UPDATE auth_identities
-         SET email = :email, display_name = :displayName, avatar_url = :avatarUrl, raw_profile_json = :profile, last_used_at = :now
-         WHERE provider = :provider AND provider_subject = :subject`,
+        `UPDATE users
+         SET display_name = :displayName,
+             avatar_url = CASE WHEN :preferFeishu = 1 THEN :avatarUrl ELSE avatar_url END,
+             email = COALESCE(:email, email),
+             primary_provider = CASE WHEN :preferFeishu = 1 THEN 'feishu' ELSE primary_provider END,
+             last_login_at = :now,
+             updated_at = :now
+         WHERE id = :userId`,
         {
-          provider: input.provider,
-          subject: input.providerSubject,
-          email: input.email,
+          userId,
           displayName: input.displayName,
           avatarUrl: input.avatarUrl || null,
-          profile: JSON.stringify(input.rawProfile),
+          email: input.email,
+          preferFeishu: input.provider === 'feishu' ? 1 : 0,
           now
         }
       );
+      if (!createdIdentity) await this.updateIdentity(input, now);
     }
 
     for (const groupKey of input.groups) {
@@ -319,6 +319,52 @@ export class AuthService {
       );
     }
     return userId;
+  }
+
+  private async findCompatibleAccount(provider: Provider, email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return null;
+    return this.db.first(
+      `SELECT ai.user_id AS id
+       FROM auth_identities ai
+       WHERE ai.provider <> :provider
+         AND LOWER(ai.email) = :email
+         AND NOT EXISTS (
+           SELECT 1 FROM auth_identities same_provider
+           WHERE same_provider.user_id = ai.user_id AND same_provider.provider = :provider
+         )
+       ORDER BY ai.last_used_at DESC, ai.linked_at DESC
+       LIMIT 1`,
+      { provider, email: normalizedEmail }
+    );
+  }
+
+  private async insertIdentity(userId: string | number, input: {
+    displayName: string; email: string | null; avatarUrl?: string | null; provider: Provider; providerSubject: string;
+    providerUserId?: string | null; openId?: string | null; unionId?: string | null; tenantKey?: string | null; rawProfile: unknown;
+  }, now: string) {
+    await this.db.exec(
+      `INSERT INTO auth_identities
+       (user_id, provider, provider_subject, tenant_key, open_id, union_id, provider_user_id, email, display_name, avatar_url, raw_profile_json, linked_at, last_used_at)
+       VALUES (:userId, :provider, :subject, :tenantKey, :openId, :unionId, :providerUserId, :email, :displayName, :avatarUrl, :profile, :now, :now)`,
+      {
+        userId, provider: input.provider, subject: input.providerSubject, tenantKey: input.tenantKey || null,
+        openId: input.openId || null, unionId: input.unionId || null, providerUserId: input.providerUserId || null,
+        email: input.email, displayName: input.displayName, avatarUrl: input.avatarUrl || null,
+        profile: JSON.stringify(input.rawProfile), now
+      }
+    );
+  }
+
+  private async updateIdentity(input: {
+    displayName: string; email: string | null; avatarUrl?: string | null; provider: Provider; providerSubject: string; rawProfile: unknown;
+  }, now: string) {
+    await this.db.exec(
+      `UPDATE auth_identities
+       SET email = :email, display_name = :displayName, avatar_url = :avatarUrl, raw_profile_json = :profile, last_used_at = :now
+       WHERE provider = :provider AND provider_subject = :subject`,
+      { provider: input.provider, subject: input.providerSubject, email: input.email, displayName: input.displayName, avatarUrl: input.avatarUrl || null, profile: JSON.stringify(input.rawProfile), now }
+    );
   }
 
   private async linkIdentity(userId: string, input: {

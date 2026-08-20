@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { z } from 'zod';
 import { DatabaseService } from '../db/database.service';
 import { nowSql, toSqlDate } from '../db/sql-time';
@@ -12,6 +12,7 @@ export const createIssueSchema = z.object({
   voteGroupKeys: z.array(z.string()).default([]),
   labelIds: z.array(z.number()).default([]),
   commentPublishAt: z.string().datetime().nullable().optional(),
+  commentEndsAt: z.string().datetime().nullable().optional(),
   voteStartsAt: z.string().datetime().nullable().optional(),
   voteEndsAt: z.string().datetime().nullable().optional(),
   voteVisibility: z.enum(['counts_after_vote', 'counts_after_close', 'names_after_close', 'admin_only']).default('counts_after_close'),
@@ -19,10 +20,16 @@ export const createIssueSchema = z.object({
   quorumCount: z.number().int().positive().nullable().optional(),
   passRule: z.enum(['simple_majority', 'two_thirds', 'custom']).default('simple_majority')
 });
+export const updateIssueSchema = createIssueSchema;
 
 @Injectable()
-export class IssuesService {
+export class IssuesService implements OnModuleInit {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+
+  onModuleInit() {
+    void this.archiveDueClosedIssues();
+    setInterval(() => void this.archiveDueClosedIssues(), 60 * 60 * 1000).unref();
+  }
 
   async list(query: Record<string, unknown>, viewer: Viewer | null) {
     const conditions = [`i.status <> 'draft'`];
@@ -99,10 +106,10 @@ export class IssuesService {
     const next = await this.db.first(`SELECT COALESCE(MAX(number), 0) + 1 AS next_number FROM issues`);
     const result = await this.db.exec(
       `INSERT INTO issues
-       (number, title, body_md, status, visibility, comment_publish_at, vote_starts_at, vote_ends_at,
+       (number, title, body_md, status, visibility, comment_publish_at, comment_ends_at, vote_starts_at, vote_ends_at,
         vote_visibility, allow_vote_change, quorum_count, pass_rule, created_by, created_at, updated_at)
        VALUES
-       (:number, :title, :bodyMd, 'open', :visibility, :commentPublishAt, :voteStartsAt, :voteEndsAt,
+       (:number, :title, :bodyMd, 'open', :visibility, :commentPublishAt, :commentEndsAt, :voteStartsAt, :voteEndsAt,
         :voteVisibility, :allowVoteChange, :quorumCount, :passRule, :createdBy, :now, :now)`,
       {
         number: next.next_number,
@@ -110,6 +117,7 @@ export class IssuesService {
         bodyMd: input.bodyMd,
         visibility: input.visibility,
         commentPublishAt: toSqlDate(input.commentPublishAt || null),
+        commentEndsAt: toSqlDate(input.commentEndsAt || null),
         voteStartsAt: toSqlDate(input.voteStartsAt || null),
         voteEndsAt: toSqlDate(input.voteEndsAt || null),
         voteVisibility: input.voteVisibility,
@@ -162,6 +170,7 @@ export class IssuesService {
         status: issue.status,
         visibility: issue.visibility,
         commentPublishAt: issue.comment_publish_at,
+        commentEndsAt: issue.comment_ends_at,
         voteStartsAt: issue.vote_starts_at,
         voteEndsAt: issue.vote_ends_at,
         voteVisibility: issue.vote_visibility,
@@ -171,12 +180,13 @@ export class IssuesService {
         createdByName: issue.created_by_name,
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
+        contentEditedAt: issue.content_edited_at,
         labels: labels.get(String(issue.id)) || [],
         viewGroups,
         voteGroups
       },
       viewer: {
-        canComment: Boolean(viewer) && issue.status !== 'archived',
+        canComment: Boolean(viewer) && issue.status === 'open' && (!issue.comment_ends_at || new Date(issue.comment_ends_at).getTime() >= Date.now()),
         canVote: await this.canVote(issue, viewer),
         canEdit: Boolean(viewer && (viewer.groups.includes('admin') || String(issue.created_by) === viewer.id)),
         canModerate: Boolean(viewer?.groups.includes('admin'))
@@ -275,8 +285,9 @@ export class IssuesService {
   }
 
   async close(number: string, viewer: Viewer) {
-    this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
     const detail = await this.getByNumber(number, viewer);
+    this.requireIssueManager(detail, viewer);
+    if (detail.issue.status !== 'open' && detail.issue.status !== 'voting') throw new ForbiddenException('只有开放中的议题可以关闭');
     const now = nowSql();
     await this.db.exec(
       `UPDATE issues SET status = 'closed', closed_by = :viewerId, closed_at = :now, updated_at = :now WHERE id = :issueId`,
@@ -287,8 +298,8 @@ export class IssuesService {
   }
 
   async reopen(number: string, viewer: Viewer) {
-    this.requireAnyGroup(viewer, ['admin', 'issue_creator']);
     const detail = await this.getByNumber(number, viewer);
+    this.requireIssueManager(detail, viewer);
     if (detail.issue.status !== 'closed') throw new ForbiddenException('只有已关闭的议题可以重新开启');
     const now = nowSql();
     await this.db.exec(
@@ -297,6 +308,51 @@ export class IssuesService {
     );
     await this.audit(viewer.id, 'issue.reopen', 'issue', detail.issue.id, { number });
     return this.getByNumber(number, viewer);
+  }
+
+  async update(number: string, input: z.infer<typeof updateIssueSchema>, viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    if (!detail.viewer.canEdit || detail.issue.status === 'archived') throw new ForbiddenException('无编辑权限或议题已归档');
+    const now = nowSql();
+    await this.db.exec(
+      `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
+       comment_ends_at = :commentEndsAt, vote_starts_at = :voteStartsAt, vote_ends_at = :voteEndsAt, vote_visibility = :voteVisibility,
+       allow_vote_change = :allowVoteChange, quorum_count = :quorumCount, pass_rule = :passRule, content_edited_at = :now, updated_at = :now
+       WHERE id = :issueId`,
+      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), voteStartsAt: toSqlDate(input.voteStartsAt || null), voteEndsAt: toSqlDate(input.voteEndsAt || null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, quorumCount: input.quorumCount || null, passRule: input.passRule, now, issueId: detail.issue.id }
+    );
+    await this.replaceLabels(detail.issue.id, input.labelIds);
+    await this.replaceIssueGroups('issue_view_groups', detail.issue.id, input.viewGroupKeys);
+    await this.replaceIssueGroups('issue_vote_groups', detail.issue.id, input.voteGroupKeys);
+    await this.audit(viewer.id, 'issue.edit', 'issue', detail.issue.id, { number });
+    return this.getByNumber(number, viewer);
+  }
+
+  async archive(number: string, viewer: Viewer) {
+    if (!viewer.groups.includes('admin')) throw new ForbiddenException('需要管理员权限');
+    const detail = await this.getByNumber(number, viewer);
+    if (detail.issue.status !== 'closed') throw new ForbiddenException('只有已关闭的议题可以归档');
+    await this.db.exec(`UPDATE issues SET status = 'archived', updated_at = :now WHERE id = :issueId`, { now: nowSql(), issueId: detail.issue.id });
+    await this.audit(viewer.id, 'issue.archive', 'issue', detail.issue.id, { number, mode: 'manual' });
+    return this.getByNumber(number, viewer);
+  }
+
+  private async archiveDueClosedIssues() {
+    try {
+      const setting = await this.db.first(`SELECT setting_value FROM system_settings WHERE setting_key = 'closed_issue_archive_after_days'`);
+      const configured = setting ? Number(JSON.parse(setting.setting_value)) : 7;
+      const days = Number.isInteger(configured) && configured >= 1 ? configured : 7;
+      await this.db.exec(
+        `UPDATE issues
+         SET status = 'archived', updated_at = :now
+         WHERE status = 'closed'
+           AND closed_at IS NOT NULL
+           AND TIMESTAMPDIFF(DAY, closed_at, UTC_TIMESTAMP()) >= :days`,
+        { now: nowSql(), days }
+      );
+    } catch {
+      // Archival is retried hourly and must not prevent the API from serving requests.
+    }
   }
 
   async labels() {
@@ -406,6 +462,12 @@ export class IssuesService {
   private requireAnyGroup(viewer: Viewer, groups: string[]) {
     if (!groups.some((group) => viewer.groups.includes(group))) {
       throw new ForbiddenException('权限不足');
+    }
+  }
+
+  private requireIssueManager(detail: Awaited<ReturnType<IssuesService['getByNumber']>>, viewer: Viewer) {
+    if (!detail.viewer.canEdit || (!viewer.groups.includes('admin') && !viewer.groups.includes('issue_creator'))) {
+      throw new ForbiddenException('仅议题发布人或管理员可以执行此操作');
     }
   }
 

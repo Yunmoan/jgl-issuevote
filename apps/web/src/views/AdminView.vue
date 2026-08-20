@@ -25,6 +25,7 @@
             <n-form-item label="站点简介"><n-input v-model:value="siteDescription" maxlength="160" show-count placeholder="显示在议题列表标题下方" /></n-form-item>
             <n-form-item label="站点公告"><n-input v-model:value="siteNotice" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="留空则不显示公告" /></n-form-item>
             <n-form-item label="新议题默认可见性"><n-select v-model:value="defaultIssueVisibility" :options="visibilityOptions" /></n-form-item>
+            <n-form-item label="已关闭议题自动归档"><n-input-number v-model:value="closedIssueArchiveAfterDays" :min="1" :max="3650" clearable><template #suffix>天后</template></n-input-number></n-form-item>
             <n-space><n-button type="primary" :loading="savingSite" @click="saveSiteName"><template #icon><n-icon><SaveOutline /></n-icon></template>保存设置</n-button></n-space>
           </n-form>
           <n-divider />
@@ -59,7 +60,7 @@
 <script setup lang="ts">
 import { h, onMounted, reactive, ref, watch } from 'vue';
 import { AddOutline, BookOutline, PeopleOutline, RefreshOutline, SaveOutline, SearchOutline, SettingsOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NCheckboxGroup, NDataTable, NDivider, NForm, NFormItem, NIcon, NInput, NInputNumber, NMenu, NModal, NSelect, NSpace, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import type { DataTableColumns, MenuOption } from 'naive-ui';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api';
 import { displayAuditAction, displayGroup, displayProvider } from '../presentation';
@@ -67,7 +68,7 @@ import { displayAuditAction, displayGroup, displayProvider } from '../presentati
 const message = useMessage();
 const dialog = useDialog();
 const active = ref('users'); const q = ref(''); const loading = ref(false); const users = ref<any[]>([]); const groups = ref<any[]>([]); const auditLogs = ref<any[]>([]);
-const siteName = ref('冀高联议事'); const siteDescription = ref(''); const siteNotice = ref(''); const defaultIssueVisibility = ref('login'); const savingSite = ref(false); const showGroups = ref(false); const selectedUser = ref<any>(null); const selectedGroups = ref<string[]>([]); const savingGroups = ref(false);
+const siteName = ref('冀高联议事'); const siteDescription = ref(''); const siteNotice = ref(''); const defaultIssueVisibility = ref('login'); const closedIssueArchiveAfterDays = ref<number | null>(7); const savingSite = ref(false); const showGroups = ref(false); const selectedUser = ref<any>(null); const selectedGroups = ref<string[]>([]); const savingGroups = ref(false);
 const showGroupEditor = ref(false); const editingGroup = ref<any>(null); const savingGroup = ref(false); const groupForm = reactive({ groupKey: '', name: '', description: '', isAssignable: true });
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const menuOptions: MenuOption[] = [
@@ -93,8 +94,8 @@ async function request<T>(work: () => Promise<T>) { loading.value = true; try { 
 async function loadUsers() { users.value = await request(async () => apiGet(`/admin/users?${q.value ? new URLSearchParams({ q: q.value }) : ''}`)); }
 async function loadGroups() { groups.value = await request(() => apiGet('/admin/groups')); }
 async function loadAudit() { auditLogs.value = await request(() => apiGet('/admin/audit-logs')); }
-async function loadSettings() { const settings = await request(() => apiGet<Array<{ key: string; value: unknown }>>('/admin/settings')); const value = (key: string, fallback = '') => settings.find((setting) => setting.key === key)?.value ?? fallback; siteName.value = String(value('site_name', '冀高联议事')); siteDescription.value = String(value('site_description')); siteNotice.value = String(value('site_notice')); defaultIssueVisibility.value = String(value('default_issue_visibility', 'login')); }
-async function saveSiteName() { if (!siteName.value.trim()) return; savingSite.value = true; try { const name = siteName.value.trim(); await Promise.all([apiPatch('/admin/settings', { key: 'site_name', value: name }), apiPatch('/admin/settings', { key: 'site_description', value: siteDescription.value.trim() }), apiPatch('/admin/settings', { key: 'site_notice', value: siteNotice.value.trim() }), apiPatch('/admin/settings', { key: 'default_issue_visibility', value: defaultIssueVisibility.value })]); window.dispatchEvent(new CustomEvent('site-config-updated', { detail: name })); message.success('站点设置已保存'); } finally { savingSite.value = false; } }
+async function loadSettings() { const settings = await request(() => apiGet<Array<{ key: string; value: unknown }>>('/admin/settings')); const value = (key: string, fallback: unknown = ''): unknown => settings.find((setting) => setting.key === key)?.value ?? fallback; siteName.value = String(value('site_name', '冀高联议事')); siteDescription.value = String(value('site_description')); siteNotice.value = String(value('site_notice')); defaultIssueVisibility.value = String(value('default_issue_visibility', 'login')); closedIssueArchiveAfterDays.value = Number(value('closed_issue_archive_after_days', 7)); }
+async function saveSiteName() { if (!siteName.value.trim()) return; savingSite.value = true; try { const name = siteName.value.trim(); await Promise.all([apiPatch('/admin/settings', { key: 'site_name', value: name }), apiPatch('/admin/settings', { key: 'site_description', value: siteDescription.value.trim() }), apiPatch('/admin/settings', { key: 'site_notice', value: siteNotice.value.trim() }), apiPatch('/admin/settings', { key: 'default_issue_visibility', value: defaultIssueVisibility.value }), apiPatch('/admin/settings', { key: 'closed_issue_archive_after_days', value: closedIssueArchiveAfterDays.value || 7 })]); window.dispatchEvent(new CustomEvent('site-config-updated', { detail: name })); message.success('站点设置已保存'); } finally { savingSite.value = false; } }
 async function toggleStatus(row: any) { await apiPatch(`/admin/users/${row.id}`, { status: row.status === 'active' ? 'disabled' : 'active' }); message.success('用户状态已更新'); loadUsers(); }
 async function editGroups(row: any) { if (!groups.value.length) await loadGroups(); selectedUser.value = row; selectedGroups.value = [...row.groups]; showGroups.value = true; }
 async function saveGroups() { if (!selectedUser.value) return; savingGroups.value = true; try { const before = new Set<string>(selectedUser.value.groups as string[]); const after = new Set<string>(selectedGroups.value); await Promise.all([...after].filter((key) => !before.has(key)).map((groupKey) => apiPost(`/admin/users/${selectedUser.value.id}/groups`, { groupKey }))); await Promise.all([...before].filter((key) => !after.has(key)).map((groupKey) => apiDelete(`/admin/users/${selectedUser.value.id}/groups/${encodeURIComponent(groupKey)}`))); message.success('权限组已更新'); showGroups.value = false; loadUsers(); } finally { savingGroups.value = false; } }

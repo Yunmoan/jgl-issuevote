@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
 import type { VoteChoice } from '../types';
-import { createIssueSchema, IssuesService } from './issues.service';
+import { createIssueSchema, IssuesService, updateIssueSchema } from './issues.service';
 import { UsersService } from '../users/users.service';
 
 @Controller()
@@ -49,6 +49,12 @@ export class IssuesController {
     return { data: await this.issues.getByNumber(number, viewer) };
   }
 
+  @Put('issues/:number')
+  async update(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.update(number, updateIssueSchema.parse(body), viewer) };
+  }
+
   @Post('issues/:number/close')
   async close(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
@@ -59,6 +65,12 @@ export class IssuesController {
   async reopen(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.requireViewer(req);
     return { data: await this.issues.reopen(number, viewer) };
+  }
+
+  @Post('issues/:number/archive')
+  async archive(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.archive(number, viewer) };
   }
 
   @Get('issues/:number/comments')
