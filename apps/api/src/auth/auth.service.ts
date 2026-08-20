@@ -56,9 +56,12 @@ export class AuthService {
 
   async getViewer(userId: string): Promise<Viewer> {
     const user = await this.db.first(
-      `SELECT id, display_name, avatar_url, email, status
-       FROM users
-       WHERE id = :id`,
+      `SELECT u.id, u.display_name, COALESCE(NULLIF(u.avatar_url, ''), NULLIF(feishu_identity.avatar_url, '')) AS avatar_url,
+              COALESCE(u.email, feishu_identity.email) AS email, u.status
+       FROM users u
+       LEFT JOIN auth_identities feishu_identity
+         ON feishu_identity.user_id = u.id AND feishu_identity.provider = 'feishu'
+       WHERE u.id = :id`,
       { id: userId }
     );
     if (!user) throw new UnauthorizedException('用户不存在');
@@ -315,7 +318,7 @@ export class AuthService {
       await this.db.exec(
         `UPDATE users
          SET display_name = :displayName,
-             avatar_url = CASE WHEN :preferFeishu = 1 THEN :avatarUrl ELSE avatar_url END,
+             avatar_url = CASE WHEN :preferFeishu = 1 THEN COALESCE(:avatarUrl, avatar_url) ELSE avatar_url END,
              email = COALESCE(:email, email),
              primary_provider = CASE WHEN :preferFeishu = 1 THEN 'feishu' ELSE primary_provider END,
              last_login_at = :now,
@@ -331,6 +334,7 @@ export class AuthService {
         }
       );
       if (!createdIdentity) await this.updateIdentity(input, now);
+      else if (input.provider === 'feishu') await this.syncFeishuUserProfile(userId, input, now);
     }
 
     for (const groupKey of input.groups) {
@@ -414,8 +418,23 @@ export class AuthService {
         { userId, provider: input.provider, subject: input.providerSubject, tenantKey: input.tenantKey || null, openId: input.openId || null, unionId: input.unionId || null, providerUserId: input.providerUserId || null, email: input.email, displayName: input.displayName, avatarUrl: input.avatarUrl || null, profile: JSON.stringify(input.rawProfile), now }
       );
     }
+    if (input.provider === 'feishu') await this.syncFeishuUserProfile(userId, input, now);
     await this.audit(userId, 'identity.bind', 'auth_identity', `${input.provider}:${input.providerSubject}`, { provider: input.provider });
     return userId;
+  }
+
+  private async syncFeishuUserProfile(userId: string | number, input: { displayName: string; email: string | null; avatarUrl?: string | null }, now: string) {
+    await this.db.exec(
+      `UPDATE users
+       SET display_name = :displayName,
+           avatar_url = COALESCE(:avatarUrl, avatar_url),
+           email = COALESCE(:email, email),
+           primary_provider = 'feishu',
+           last_login_at = :now,
+           updated_at = :now
+       WHERE id = :userId`,
+      { userId, displayName: input.displayName, avatarUrl: input.avatarUrl || null, email: input.email, now }
+    );
   }
 
   private async audit(actorId: string, action: string, targetType: string, targetId: string, metadata: unknown) {
