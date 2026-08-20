@@ -130,6 +130,12 @@ Authorization: Bearer ${accessToken}
 
 ## 账号绑定策略
 
+## 飞书部门权限组
+
+当 `FEISHU_ENABLED=true` 时，系统管理员可在“管理后台 - 权限组”执行“同步飞书部门”。每个飞书部门都会成为只读权限组；飞书用户登录或绑定飞书身份后，系统会读取其 `open_department_id` 并更新飞书来源的权限组成员关系。手工分配的权限组不会被此同步删除。
+
+飞书应用还必须申请并发布通讯录读取权限，至少包括读取部门和用户基础信息/所属部门所需的 `contact:department:readonly`、`contact:contact.base:readonly` 权限。若通讯录接口无权限或临时不可用，飞书基础登录仍可成功，但本次不会变更部门权限组；管理员同步按钮会返回具体接口错误。
+
 绑定入口：
 
 - 飞书登录后，进入个人中心，选择“绑定 NatayarkID”；完成 NatayarkID OAuth 回调后，身份会绑定到当前飞书账户。

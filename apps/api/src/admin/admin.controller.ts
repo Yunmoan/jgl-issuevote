@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req }
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AuthService } from '../auth/auth.service';
+import { FeishuOrganizationService } from '../auth/feishu-organization.service';
 import { AiReviewService } from '../issues/ai-review.service';
 import { IssuesService } from '../issues/issues.service';
 import { UsersService } from '../users/users.service';
@@ -12,7 +13,8 @@ export class AdminController {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(UsersService) private readonly users: UsersService,
     @Inject(IssuesService) private readonly issues: IssuesService,
-    @Inject(AiReviewService) private readonly aiReview: AiReviewService
+    @Inject(AiReviewService) private readonly aiReview: AiReviewService,
+    @Inject(FeishuOrganizationService) private readonly feishuOrganization: FeishuOrganizationService
   ) {}
 
   @Get('users')
@@ -47,6 +49,13 @@ export class AdminController {
     const viewer = await this.auth.requireViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.groups() };
+  }
+
+  @Post('feishu/departments/sync')
+  async syncFeishuDepartments(@Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    this.users.requireAdmin(viewer);
+    return { data: await this.feishuOrganization.syncAllDepartments(viewer) };
   }
 
   @Get('labels')

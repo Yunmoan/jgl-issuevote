@@ -37,6 +37,7 @@ a { color: inherit; text-decoration: none; }
 .side-stack { display: grid; gap: 16px; }
 .markdown-body { color: inherit; line-height: 1.8; white-space: pre-wrap; }
 .admin-grid { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 24px; align-items: start; }
+.admin-grid > * { min-width: 0; }
 .admin-menu { position: sticky; top: 88px; }
 @media (max-width: 980px) {
   .topbar { height: 56px; }

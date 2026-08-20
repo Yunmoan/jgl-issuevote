@@ -43,12 +43,23 @@ CREATE TABLE IF NOT EXISTS permission_groups (
   group_key VARCHAR(80) NOT NULL,
   name VARCHAR(80) NOT NULL,
   description VARCHAR(300) NULL,
-  kind ENUM('system', 'custom') NOT NULL DEFAULT 'custom',
+  kind ENUM('system', 'custom', 'feishu_org') NOT NULL DEFAULT 'custom',
   is_assignable BOOLEAN NOT NULL DEFAULT TRUE,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_permission_group_key (group_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS feishu_department_groups (
+  department_id VARCHAR(191) NOT NULL,
+  group_id BIGINT UNSIGNED NOT NULL,
+  department_name VARCHAR(80) NOT NULL,
+  parent_department_id VARCHAR(191) NULL,
+  synced_at DATETIME NOT NULL,
+  PRIMARY KEY (department_id),
+  UNIQUE KEY uk_feishu_department_group (group_id),
+  CONSTRAINT fk_feishu_department_group FOREIGN KEY (group_id) REFERENCES permission_groups(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS user_group_memberships (

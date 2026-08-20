@@ -102,6 +102,8 @@ export class UsersService {
 
   async addGroup(userId: string, groupKey: string, actor: Viewer) {
     this.requireAdmin(actor);
+    const group = await this.db.first(`SELECT kind FROM permission_groups WHERE group_key = :groupKey`, { groupKey });
+    if (group?.kind === 'feishu_org') throw new ForbiddenException('飞书部门权限组由飞书登录自动同步，不能手动调整');
     await this.db.exec(
       `INSERT IGNORE INTO user_group_memberships (user_id, group_id, source, created_at)
        SELECT :userId, id, 'manual', :now FROM permission_groups WHERE group_key = :groupKey`,
@@ -113,6 +115,13 @@ export class UsersService {
 
   async removeGroup(userId: string, groupKey: string, actor: Viewer) {
     this.requireAdmin(actor);
+    const membership = await this.db.first(
+      `SELECT ugm.source FROM user_group_memberships ugm
+       JOIN permission_groups pg ON pg.id = ugm.group_id
+       WHERE ugm.user_id = :userId AND pg.group_key = :groupKey`,
+      { userId, groupKey }
+    );
+    if (membership?.source === 'feishu_org') throw new ForbiddenException('飞书部门权限组由飞书登录自动同步，不能手动调整');
     await this.db.exec(
       `DELETE ugm FROM user_group_memberships ugm
        JOIN permission_groups pg ON pg.id = ugm.group_id

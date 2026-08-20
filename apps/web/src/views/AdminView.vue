@@ -14,8 +14,8 @@
         </n-card>
 
         <n-card v-else-if="active === 'groups'" title="权限组" size="large">
-          <template #header-extra><n-space><n-button tertiary @click="loadGroups"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button><n-button type="primary" @click="openGroupEditor()"><template #icon><n-icon><AddOutline /></n-icon></template>新建权限组</n-button></n-space></template>
-          <n-alert type="info" :bordered="false" class="card-note">权限组决定议题可见范围和投票资格。成员归属可在“用户管理”中调整。</n-alert>
+          <template #header-extra><n-space :wrap="true"><n-button tertiary @click="loadGroups"><template #icon><n-icon><RefreshOutline /></n-icon></template>刷新</n-button><n-button :loading="syncingFeishuDepartments" secondary @click="syncFeishuDepartments"><template #icon><n-icon><RefreshOutline /></n-icon></template>同步飞书部门</n-button><n-button type="primary" @click="openGroupEditor()"><template #icon><n-icon><AddOutline /></n-icon></template>新建权限组</n-button></n-space></template>
+          <n-alert type="info" :bordered="false" class="card-note">权限组决定议题可见范围和投票资格。飞书部门会同步为只读权限组，飞书用户登录时自动更新所属部门。</n-alert>
           <n-data-table :columns="groupColumns" :data="groups" :loading="loading" :scroll-x="820" />
         </n-card>
 
@@ -73,7 +73,7 @@
 
     <n-modal v-model:show="showGroups" preset="card" title="调整用户权限组" :style="{ width: 'min(480px, calc(100vw - 24px))' }" :bordered="false">
       <p v-if="selectedUser" class="selected-user">{{ selectedUser.displayName }} <span>{{ selectedUser.email || '未提供邮箱' }}</span></p>
-      <n-checkbox-group v-model:value="selectedGroups" class="group-checks"><n-space vertical><n-checkbox v-for="group in groups" :key="group.groupKey" :value="group.groupKey" :label="group.name" /></n-space></n-checkbox-group>
+      <n-checkbox-group v-model:value="selectedGroups" class="group-checks"><n-space vertical><n-checkbox v-for="group in groups" :key="group.groupKey" :value="group.groupKey" :disabled="group.kind === 'feishu_org'" :label="group.name" /></n-space></n-checkbox-group>
       <template #footer><n-space justify="end"><n-button @click="showGroups = false">取消</n-button><n-button type="primary" :loading="savingGroups" @click="saveGroups">保存权限组</n-button></n-space></template>
     </n-modal>
 
@@ -111,7 +111,7 @@ const dialog = useDialog();
 const active = ref('users'); const q = ref(''); const loading = ref(false); const users = ref<any[]>([]); const groups = ref<any[]>([]); const labels = ref<any[]>([]); const auditLogs = ref<any[]>([]);
 const siteName = ref('冀高联事项'); const siteDescription = ref(''); const siteNotice = ref(''); const footerText = ref(''); const defaultIssueVisibility = ref('login'); const closedIssueArchiveAfterDays = ref<number | null>(7); const watermarkMode = ref('off'); const savingSite = ref(false); const aiReviewMode = ref<'disabled' | 'manual' | 'ai'>('manual'); const aiEndpoint = ref(''); const aiModel = ref('Qwen3-8B'); const aiApiKey = ref(''); const aiApiKeyConfigured = ref(false); const clearAiApiKey = ref(false); const aiPolicyPrompt = ref(''); const savingAiReview = ref(false); const testingAiReview = ref(false); const showGroups = ref(false); const selectedUser = ref<any>(null); const selectedGroups = ref<string[]>([]); const savingGroups = ref(false);
 const showGroupEditor = ref(false); const editingGroup = ref<any>(null); const savingGroup = ref(false); const groupForm = reactive({ groupKey: '', name: '', description: '', isAssignable: true });
-const showLabelEditor = ref(false); const editingLabel = ref<any>(null); const savingLabel = ref(false); const labelForm = reactive({ name: '', color: '#1677ff', description: '' });
+const showLabelEditor = ref(false); const editingLabel = ref<any>(null); const savingLabel = ref(false); const syncingFeishuDepartments = ref(false); const labelForm = reactive({ name: '', color: '#1677ff', description: '' });
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const watermarkOptions = [{ label: '关闭', value: 'off' }, { label: '全局水印', value: 'global' }, { label: '仅议题页水印', value: 'issue' }];
 const aiReviewModeOptions = [{ label: '关闭预审', value: 'disabled' }, { label: '手动预审', value: 'manual' }, { label: 'AI 自动预审', value: 'ai' }];
@@ -132,7 +132,7 @@ const userColumns: DataTableColumns<any> = [
   { title: '操作', key: 'actions', width: 154, fixed: 'right', render: (row) => h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => editGroups(row) }, { default: () => '权限组' }), h(NButton, { size: 'small', tertiary: true, type: row.status === 'active' ? 'warning' : 'success', onClick: () => toggleStatus(row) }, { default: () => row.status === 'active' ? '禁用' : '启用' })] }) }
 ];
 const groupColumns: DataTableColumns<any> = [
-  { title: '名称', key: 'name', width: 160 }, { title: '标识', key: 'groupKey', width: 150 }, { title: '类型', key: 'kind', width: 100, render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.kind === 'system' ? '系统' : '自定义' }) }, { title: '说明', key: 'description', minWidth: 220 },
+  { title: '名称', key: 'name', width: 160 }, { title: '标识', key: 'groupKey', width: 150 }, { title: '类型', key: 'kind', width: 110, render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.kind === 'system' ? '系统' : row.kind === 'feishu_org' ? '飞书部门' : '自定义' }) }, { title: '说明', key: 'description', minWidth: 220 },
   { title: '操作', key: 'actions', width: 150, fixed: 'right', render: (row) => row.kind === 'custom' ? h(NSpace, { size: 6 }, { default: () => [h(NButton, { size: 'small', tertiary: true, onClick: () => openGroupEditor(row) }, { default: () => '编辑' }), h(NButton, { size: 'small', tertiary: true, type: 'error', onClick: () => confirmDeleteGroup(row) }, { default: () => '删除' })] }) : h(NTag, { size: 'small', bordered: false }, { default: () => '受保护' }) }
 ];
 const labelColumns: DataTableColumns<any> = [
@@ -146,6 +146,7 @@ const auditColumns: DataTableColumns<any> = [{ title: '时间', key: 'createdAt'
 async function request<T>(work: () => Promise<T>) { loading.value = true; try { return await work(); } finally { loading.value = false; } }
 async function loadUsers() { users.value = await request(async () => apiGet(`/admin/users?${q.value ? new URLSearchParams({ q: q.value }) : ''}`)); }
 async function loadGroups() { groups.value = await request(() => apiGet('/admin/groups')); }
+async function syncFeishuDepartments() { syncingFeishuDepartments.value = true; try { const result = await apiPost<{ synced: number; created: number; updated: number }>('/admin/feishu/departments/sync'); message.success(`已同步 ${result.synced} 个飞书部门，新增 ${result.created} 个`); await loadGroups(); } catch (error) { message.error(error instanceof Error ? error.message : '飞书部门同步失败'); } finally { syncingFeishuDepartments.value = false; } }
 async function loadLabels() { labels.value = await request(() => apiGet('/admin/labels')); }
 async function loadAudit() { auditLogs.value = await request(() => apiGet('/admin/audit-logs')); }
 async function loadSettings() { const [settings, aiSettings] = await request(() => Promise.all([apiGet<Array<{ key: string; value: unknown }>>('/admin/settings'), apiGet<{ mode: 'disabled' | 'manual' | 'ai'; endpoint: string; model: string; policyPrompt: string; apiKeyConfigured: boolean }>('/admin/ai-review-settings')])); const value = (key: string, fallback: unknown = ''): unknown => settings.find((setting) => setting.key === key)?.value ?? fallback; siteName.value = String(value('site_name', '冀高联事项')); siteDescription.value = String(value('site_description')); siteNotice.value = String(value('site_notice')); footerText.value = String(value('footer_text')); defaultIssueVisibility.value = String(value('default_issue_visibility', 'login')); closedIssueArchiveAfterDays.value = Number(value('closed_issue_archive_after_days', 7)); watermarkMode.value = String(value('watermark_mode', 'off')); aiReviewMode.value = aiSettings.mode; aiEndpoint.value = aiSettings.endpoint; aiModel.value = aiSettings.model; aiPolicyPrompt.value = aiSettings.policyPrompt; aiApiKey.value = ''; aiApiKeyConfigured.value = aiSettings.apiKeyConfigured; clearAiApiKey.value = false; }
@@ -183,6 +184,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateAdminNavigation
 .group-checks { padding: 8px 0; }
 :deep(.table-secondary) { margin-top: 3px; color: inherit; opacity: .72; font-size: 12px; }
 @media (max-width: 980px) { .admin-mobile-select { width: 100%; } }
-@media (max-width: 640px) { .settings-form { grid-template-columns: minmax(0, 1fr); } .settings-span-full { grid-column: auto; } .settings-card :deep(.n-card__content) { padding: 16px !important; } .settings-section-heading { margin-bottom: 16px; } }
+@media (max-width: 640px) { .settings-form { grid-template-columns: minmax(0, 1fr); } .settings-span-full { grid-column: auto; } .admin-content :deep(.n-card-header) { align-items: flex-start; flex-wrap: wrap; row-gap: 12px; } .admin-content :deep(.n-card-header__main) { flex: 0 0 100%; width: 100%; } .admin-content :deep(.n-card-header__extra) { width: 100%; margin-left: 0; } .admin-content :deep(.n-card-header__extra .n-space) { width: 100%; } .settings-card :deep(.n-card__content) { padding: 16px !important; } .settings-section-heading { margin-bottom: 16px; } }
 @media (max-width: 540px) { .toolbar { display: grid; grid-template-columns: 1fr auto; } .toolbar :deep(.n-input) { width: 100%; } .settings-actions > .n-button { flex: 1 1 auto; } }
 </style>

@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { DatabaseService } from '../db/database.service';
 import { nowSql } from '../db/sql-time';
 import type { Provider, Viewer } from '../types';
+import { FeishuOrganizationService } from './feishu-organization.service';
 
 const SESSION_COOKIE = 'jgl_session';
 const DEFAULT_FEISHU_WEB_SDK_URL = 'https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js';
@@ -16,7 +17,10 @@ const NYK_LINK_USER_COOKIE = 'nyk_oauth_link_user';
 
 @Injectable()
 export class AuthService {
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(FeishuOrganizationService) private readonly feishuOrganization: FeishuOrganizationService
+  ) {}
 
   providers() {
     return {
@@ -203,6 +207,7 @@ export class AuthService {
     }
     const identity = await this.feishuIdentity(code);
     const userId = await this.ensureUser(identity);
+    await this.syncFeishuDepartments(String(userId), identity.openId);
     this.setSession(res, String(userId));
     return this.getViewer(String(userId));
   }
@@ -210,6 +215,7 @@ export class AuthService {
   async bindFeishuCode(code: string, targetUserId: string, res: Response) {
     const identity = await this.feishuIdentity(code);
     const userId = await this.linkIdentity(targetUserId, identity);
+    await this.syncFeishuDepartments(String(userId), identity.openId);
     this.setSession(res, String(userId));
     return this.getViewer(String(userId));
   }
@@ -437,6 +443,16 @@ export class AuthService {
        WHERE id = :userId`,
       { userId, displayName: input.displayName, avatarUrl: input.avatarUrl || null, email: input.email, now }
     );
+  }
+
+  private async syncFeishuDepartments(userId: string, openId: string | null) {
+    if (!openId) return;
+    try {
+      await this.feishuOrganization.syncUserDepartments(userId, openId);
+    } catch (error) {
+      // Contact-directory authorization must not turn a successful Feishu login into a lockout.
+      console.warn('飞书部门同步失败', error instanceof Error ? error.message : error);
+    }
   }
 
   private async audit(actorId: string, action: string, targetType: string, targetId: string, metadata: unknown) {

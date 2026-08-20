@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin/admin.controller';
 import { AuthController } from './auth/auth.controller';
+import { FeishuOrganizationService } from './auth/feishu-organization.service';
 import { AuthService } from './auth/auth.service';
 import { DatabaseService } from './db/database.service';
 import { AiReviewService } from './issues/ai-review.service';
@@ -11,6 +12,6 @@ import { UsersService } from './users/users.service';
 
 @Module({
   controllers: [AdminController, AuthController, IssuesController, SiteController],
-  providers: [AuthService, DatabaseService, AiReviewService, IssuesService, UsersService]
+  providers: [AuthService, FeishuOrganizationService, DatabaseService, AiReviewService, IssuesService, UsersService]
 })
 export class AppModule {}
