@@ -48,6 +48,7 @@
 - 飞书开发者后台的 **安全设置 > 重定向 URL** 必须包含实际网页地址。例如首页为 `https://issue-vote.hbutu.cn/` 时，应登记该完整路径（不含查询串和 `#`）。
 - `FEISHU_WEB_SDK_URL` 可以覆盖 SDK 地址；旧值 `https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js` 已失效，应用会自动回退到当前默认地址。
 - 飞书 user_id/open_id/union_id 含义不同，`auth_identities.provider_subject` 建议优先使用 `union_id`，没有时使用 `open_id`。
+- 登录时会保存飞书的昵称、头像 URL、`email`（缺失时使用 `enterprise_email`）、open_id、union_id、user_id、tenant_key 和原始用户信息。邮箱字段分别需要 `contact:user.email:readonly` 或“获取用户受雇信息”权限；没有获得相应权限时，飞书不会返回该字段。
 - 如果需要组织架构校验，应申请通讯录相关权限，并处理飞书权限范围不足的错误。
 
 参考资料：
@@ -131,7 +132,8 @@ Authorization: Bearer ${accessToken}
 
 绑定入口：
 
-- 个人中心绑定另一个身份。
+- 飞书登录后，进入个人中心，选择“绑定 NatayarkID”；完成 NatayarkID OAuth 回调后，身份会绑定到当前飞书账户。
+- NatayarkID 登录后，在飞书客户端打开本站时，前端会将当前飞书身份绑定到已登录的 NatayarkID 账户。
 - 登录后触发强制绑定页。
 - 管理员手动合并账号。
 

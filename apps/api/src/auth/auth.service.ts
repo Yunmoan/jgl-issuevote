@@ -241,8 +241,10 @@ export class AuthService {
     this.assertAllowedFeishuTenant(user?.tenant_key);
     return {
       displayName: user.name || user.en_name || '飞书用户',
-      email: user.email || null,
-      avatarUrl: user.avatar_url || null,
+      // email and enterprise_email require different Feishu field permissions.
+      // Persist either response when it is available for the account.
+      email: user.email || user.enterprise_email || null,
+      avatarUrl: user.avatar_url || user.avatar_middle || user.avatar_big || user.avatar_thumb || null,
       provider: 'feishu',
       providerSubject: String(subject),
       providerUserId: user.user_id || null,
