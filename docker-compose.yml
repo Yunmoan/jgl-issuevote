@@ -1,0 +1,23 @@
+services:
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MYSQL_DATABASE: jgl_issuevote
+      MYSQL_USER: jgl
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root-password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./apps/api/migrations:/docker-entrypoint-initdb.d:ro
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  mariadb-data:
+

@@ -1,0 +1,73 @@
+import { Body, Controller, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { z } from 'zod';
+import { AuthService } from '../auth/auth.service';
+import type { VoteChoice } from '../types';
+import { createIssueSchema, IssuesService } from './issues.service';
+
+@Controller()
+export class IssuesController {
+  constructor(
+    private readonly auth: AuthService,
+    private readonly issues: IssuesService
+  ) {}
+
+  @Get('health')
+  health() {
+    return { data: { ok: true, service: 'jgl-issuevote-api' } };
+  }
+
+  @Get('labels')
+  async labels() {
+    return { data: await this.issues.labels() };
+  }
+
+  @Get('issues')
+  async list(@Query() query: Record<string, unknown>, @Req() req: Request) {
+    const viewer = await this.auth.viewerFromRequest(req);
+    return { data: await this.issues.list(query, viewer) };
+  }
+
+  @Post('issues')
+  async create(@Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const input = createIssueSchema.parse(body);
+    return { data: await this.issues.create(input, viewer) };
+  }
+
+  @Get('issues/:number')
+  async detail(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.viewerFromRequest(req);
+    return { data: await this.issues.getByNumber(number, viewer) };
+  }
+
+  @Post('issues/:number/close')
+  async close(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.issues.close(number, viewer) };
+  }
+
+  @Get('issues/:number/comments')
+  async comments(@Param('number') number: string, @Req() req: Request) {
+    const viewer = await this.auth.viewerFromRequest(req);
+    return { data: await this.issues.comments(number, viewer) };
+  }
+
+  @Post('issues/:number/comments')
+  async createComment(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
+    return { data: await this.issues.createComment(number, parsed.bodyMd, viewer) };
+  }
+
+  @Post('issues/:number/vote')
+  @Put('issues/:number/vote')
+  async vote(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({
+      choice: z.enum(['agree', 'disagree', 'abstain']),
+      reason: z.string().max(300).optional()
+    }).parse(body);
+    return { data: await this.issues.vote(number, parsed.choice as VoteChoice, parsed.reason, viewer) };
+  }
+}
