@@ -19,120 +19,120 @@ export class AdminController {
 
   @Get('users')
   async listUsers(@Query() query: Record<string, unknown>, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.users(query) };
   }
 
   @Patch('users/:id')
   async updateUser(@Param('id') id: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ status: z.enum(['active', 'disabled', 'pending']) }).parse(body);
     return { data: await this.users.updateStatus(id, parsed.status, viewer) };
   }
 
   @Post('users/:id/groups')
   async addGroup(@Param('id') id: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ groupKey: z.string().min(1) }).parse(body);
     return { data: await this.users.addGroup(id, parsed.groupKey, viewer) };
   }
 
   @Delete('users/:id/groups/:groupKey')
   async removeGroup(@Param('id') id: string, @Param('groupKey') groupKey: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.users.removeGroup(id, groupKey, viewer) };
   }
 
   @Get('groups')
   async groups(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.groups() };
   }
 
   @Post('feishu/departments/sync')
   async syncFeishuDepartments(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.feishuOrganization.syncAllDepartments(viewer) };
   }
 
   @Post('users/:id/feishu-departments/sync')
   async syncUserFeishuDepartments(@Param('id') id: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.auth.refreshFeishuDepartments(id, viewer) };
   }
 
   @Get('labels')
   async labels(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.adminLabels(viewer) };
   }
 
   @Post('labels')
   async createLabel(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.createLabel(labelSchema.parse(body), viewer) };
   }
 
   @Patch('labels/:id')
   async updateLabel(@Param('id') id: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.updateLabel(labelIdSchema.parse(id), labelSchema.parse(body), viewer) };
   }
 
   @Delete('labels/:id')
   async deleteLabel(@Param('id') id: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.deleteLabel(labelIdSchema.parse(id), viewer) };
   }
 
   @Post('groups')
   async createGroup(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = groupSchema.parse(body);
     return { data: await this.users.createGroup(parsed, viewer) };
   }
 
   @Patch('groups/:groupKey')
   async updateGroup(@Param('groupKey') groupKey: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = groupUpdateSchema.parse(body);
     return { data: await this.users.updateGroup(groupKey, parsed, viewer) };
   }
 
   @Delete('groups/:groupKey')
   async deleteGroup(@Param('groupKey') groupKey: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.users.deleteGroup(groupKey, viewer) };
   }
 
   @Get('settings')
   async settings(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.settings() };
   }
 
   @Patch('settings')
   async setSetting(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ key: z.string().min(1), value: z.unknown() }).parse(body);
     return { data: await this.users.setSetting(parsed.key, parsed.value, viewer) };
   }
 
   @Get('ai-review-settings')
   async aiReviewSettings(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.aiReview.adminSettings() };
   }
 
   @Patch('ai-review-settings')
   async updateAiReviewSettings(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     const parsed = aiReviewSettingsSchema.parse(body);
     return { data: await this.aiReview.updateSettings(parsed, viewer) };
@@ -140,14 +140,14 @@ export class AdminController {
 
   @Post('ai-review-settings/test')
   async testAiReviewSettings(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.aiReview.testConnection() };
   }
 
   @Get('audit-logs')
   async auditLogs(@Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     this.users.requireAdmin(viewer);
     return { data: await this.users.auditLogs() };
   }

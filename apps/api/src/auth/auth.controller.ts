@@ -57,11 +57,23 @@ export class AuthController {
   @Get('auth/natayarkid/callback')
   async callbackNyk(@Req() req: Request, @Res() res: Response, @Query('redirect') redirect?: string) {
     await this.auth.handleNatayarkIdCallback(req, res);
-    res.redirect(redirect || process.env.APP_URL || 'http://localhost:5173');
+    res.redirect(safeAppRedirect(redirect));
   }
 
   @Post('auth/logout')
   logout(@Res({ passthrough: true }) res: Response) {
     return { data: this.auth.logout(res) };
+  }
+}
+
+function safeAppRedirect(redirect?: string) {
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  if (!redirect) return appUrl;
+  try {
+    const base = new URL(appUrl);
+    const target = new URL(redirect, base);
+    return target.origin === base.origin ? target.toString() : appUrl;
+  } catch {
+    return appUrl;
   }
 }

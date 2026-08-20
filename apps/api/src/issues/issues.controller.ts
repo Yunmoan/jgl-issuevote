@@ -31,14 +31,14 @@ export class IssuesController {
 
   @Get('permission-groups')
   async permissionGroups(@Req() req: Request) {
-    await this.auth.requireViewer(req);
+    await this.auth.requireDataViewer(req);
     return { data: await this.users.groups() };
   }
 
   @Post('uploads/images')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadImage(@UploadedFile() file: Express.Multer.File | undefined, @Req() req: Request) {
-    await this.auth.requireViewer(req);
+    await this.auth.requireDataViewer(req);
     if (!file || !isValidImage(file)) throw new BadRequestException('仅支持 5MB 以内的 JPEG、PNG、GIF 或 WebP 图片');
     const extension = imageExtensions[file.mimetype];
     const directory = join(uploadDirectory(), 'images');
@@ -51,12 +51,13 @@ export class IssuesController {
   @Get('issues')
   async list(@Query() query: Record<string, unknown>, @Req() req: Request) {
     const viewer = await this.auth.viewerFromRequest(req);
+    this.auth.assertDataAccess(viewer);
     return { data: await this.issues.list(query, viewer) };
   }
 
   @Post('issues')
   async create(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const input = parseIssueInput(createIssueSchema, body);
     const aiReviewToken = z.object({ aiReviewToken: z.string().min(20).max(4000).optional() }).parse(body).aiReviewToken;
     return { data: await this.issues.create(input, viewer, aiReviewToken) };
@@ -64,20 +65,20 @@ export class IssuesController {
 
   @Post('issues/ai-review')
   async aiReviewDraft(@Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ title: z.string().trim().min(3).max(200), bodyMd: z.string().trim().min(1).max(60 * 1024) }).parse(body);
     return { data: await this.issues.aiReviewDraft(parsed, viewer) };
   }
 
   @Get('issues/reviews')
   async reviewQueue(@Query() query: Record<string, unknown>, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.reviewQueue(query, viewer) };
   }
 
   @Post('issues/:number/review')
   async review(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({
       decision: z.enum(['approve', 'reject']),
       note: z.string().trim().max(1000).optional()
@@ -92,97 +93,105 @@ export class IssuesController {
   @Get('issues/:number')
   async detail(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.viewerFromRequest(req);
+    this.auth.assertDataAccess(viewer);
     return { data: await this.issues.getByNumber(number, viewer) };
   }
 
   @Put('issues/:number')
   async update(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.update(number, parseIssueInput(updateIssueSchema, body), viewer) };
   }
 
   @Post('issues/:number/close')
   async close(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ visibility: z.enum(['retain', 'public', 'admin_only']).default('retain') }).parse(body);
     return { data: await this.issues.close(number, parsed.visibility, viewer) };
   }
 
   @Post('issues/:number/end-voting')
   async endVoting(@Param('number') number: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.endVoting(number, viewer) };
   }
 
   @Post('issues/:number/start-voting')
   async startVoting(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
-    const parsed = z.object({ durationMinutes: z.coerce.number().int().min(1).max(43_200) }).parse(body);
+    const viewer = await this.auth.requireDataViewer(req);
+    const parsed = z.object({ durationMinutes: z.coerce.number().int().min(3).max(43_200) }).parse(body);
     return { data: await this.issues.startVoting(number, parsed.durationMinutes, viewer) };
   }
 
   @Post('issues/:number/outcome')
   async confirmOutcome(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ outcome: z.enum(['passed', 'rejected']) }).parse(body);
     return { data: await this.issues.confirmOutcome(number, parsed.outcome, viewer) };
   }
 
   @Post('issues/:number/reopen')
   async reopen(@Param('number') number: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.reopen(number, viewer) };
   }
 
   @Post('issues/:number/archive')
   async archive(@Param('number') number: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.archive(number, viewer) };
   }
 
   @Get('issues/:number/comments')
   async comments(@Param('number') number: string, @Req() req: Request) {
     const viewer = await this.auth.viewerFromRequest(req);
+    this.auth.assertDataAccess(viewer);
     return { data: await this.issues.comments(number, viewer) };
   }
 
   @Post('issues/:number/comments')
   async createComment(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
     return { data: await this.issues.createComment(number, parsed.bodyMd, viewer) };
   }
 
   @Put('issues/:number/comments/:commentId')
   async updateComment(@Param('number') number: string, @Param('commentId') commentId: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
     return { data: await this.issues.updateComment(number, commentId, parsed.bodyMd, viewer) };
   }
 
+  @Delete('issues/:number/comments/:commentId')
+  async deleteComment(@Param('number') number: string, @Param('commentId') commentId: string, @Req() req: Request) {
+    const viewer = await this.auth.requireDataViewer(req);
+    return { data: await this.issues.deleteComment(number, commentId, viewer) };
+  }
+
   @Post('issues/:number/comments/:commentId/reactions')
   async toggleCommentReaction(@Param('number') number: string, @Param('commentId') commentId: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ reaction: z.enum(['like', 'yes', 'no']) }).parse(body);
     return { data: await this.issues.toggleCommentReaction(number, commentId, parsed.reaction, viewer) };
   }
 
   @Post('issues/:number/comments/:commentId/replies')
   async createCommentReply(@Param('number') number: string, @Param('commentId') commentId: string, @Body() body: unknown, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
     return { data: await this.issues.createCommentReply(number, commentId, parsed.bodyMd, viewer) };
   }
 
   @Delete('issues/:number/comments/:commentId/replies/:replyId')
   async deleteCommentReply(@Param('number') number: string, @Param('commentId') commentId: string, @Param('replyId') replyId: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.deleteCommentReply(number, commentId, replyId, viewer) };
   }
 
   @Post('issues/:number/comments/:commentId/replies/:replyId/hide')
   async hideCommentReply(@Param('number') number: string, @Param('commentId') commentId: string, @Param('replyId') replyId: string, @Req() req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     return { data: await this.issues.hideCommentReply(number, commentId, replyId, viewer) };
   }
 
@@ -197,7 +206,7 @@ export class IssuesController {
   }
 
   private async castVote(number: string, body: unknown, req: Request) {
-    const viewer = await this.auth.requireViewer(req);
+    const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({
       choice: z.enum(['agree', 'disagree', 'abstain']),
       reason: z.string().max(300).optional()

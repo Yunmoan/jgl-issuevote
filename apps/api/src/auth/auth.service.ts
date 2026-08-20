@@ -13,14 +13,17 @@ const SESSION_COOKIE = 'jgl_session';
 const DEFAULT_FEISHU_WEB_SDK_URL = 'https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.48.js';
 const REMOVED_FEISHU_WEB_SDK_URL = 'https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/open/jsdk/jssdk-1.0.1.js';
 const NYK_STATE_COOKIE = 'nyk_oauth_state';
-const NYK_LINK_USER_COOKIE = 'nyk_oauth_link_user';
+const NYK_LINK_CONTEXT_COOKIE = 'nyk_oauth_link_context';
+const LEGACY_NYK_LINK_USER_COOKIE = 'nyk_oauth_link_user';
 
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(FeishuOrganizationService) private readonly feishuOrganization: FeishuOrganizationService
-  ) {}
+  ) {
+    this.sessionSecret();
+  }
 
   providers() {
     return {
@@ -44,7 +47,8 @@ export class AuthService {
 
     try {
       const payload = jwt.verify(token, this.sessionSecret()) as { sub: string };
-      return await this.getViewer(payload.sub);
+      const viewer = await this.getViewer(payload.sub);
+      return viewer.status === 'active' ? viewer : null;
     } catch {
       return null;
     }
@@ -56,6 +60,18 @@ export class AuthService {
       throw new UnauthorizedException('需要登录');
     }
     return viewer;
+  }
+
+  async requireDataViewer(req: Request): Promise<Viewer> {
+    const viewer = await this.requireViewer(req);
+    this.assertDataAccess(viewer);
+    return viewer;
+  }
+
+  assertDataAccess(viewer: Viewer | null) {
+    const blocker = this.issueAccessBlocker(viewer);
+    if (blocker === 'bind_feishu_required') throw new ForbiddenException('需要先绑定飞书账号才能访问业务数据');
+    if (blocker === 'bind_natayarkid_required') throw new ForbiddenException('需要先绑定 NatayarkID 才能访问业务数据');
   }
 
   async getViewer(userId: string): Promise<Viewer> {
@@ -127,8 +143,13 @@ export class AuthService {
     const authorizationUrl = process.env.NYK_OAUTH_AUTHORIZATION_URL || 'https://account.naids.com/oauth2/authorize';
     const state = randomBytes(24).toString('hex');
     res.cookie(NYK_STATE_COOKIE, state, cookieOptions(10 * 60 * 1000));
-    if (linkUserId) res.cookie(NYK_LINK_USER_COOKIE, linkUserId, cookieOptions(10 * 60 * 1000));
-    else res.clearCookie(NYK_LINK_USER_COOKIE);
+    if (linkUserId) {
+      const context = jwt.sign({ sub: linkUserId, state, purpose: 'natayarkid_link' }, this.sessionSecret(), { expiresIn: '10m' });
+      res.cookie(NYK_LINK_CONTEXT_COOKIE, context, cookieOptions(10 * 60 * 1000));
+    } else {
+      res.clearCookie(NYK_LINK_CONTEXT_COOKIE);
+    }
+    res.clearCookie(LEGACY_NYK_LINK_USER_COOKIE);
 
     const url = new URL(authorizationUrl);
     url.searchParams.set('response_type', 'code');
@@ -193,12 +214,32 @@ export class AuthService {
       groups: ['member'],
       rawProfile: profileResponse.data
     } as const;
-    const linkUserId = req.cookies?.[NYK_LINK_USER_COOKIE] ? String(req.cookies[NYK_LINK_USER_COOKIE]) : null;
+    const linkUserId = await this.verifiedNatayarkIdLinkUser(req, state);
     const userId = linkUserId ? await this.linkIdentity(linkUserId, identity) : await this.ensureUser(identity);
     this.setSession(res, String(userId));
     res.clearCookie(NYK_STATE_COOKIE);
-    res.clearCookie(NYK_LINK_USER_COOKIE);
+    res.clearCookie(NYK_LINK_CONTEXT_COOKIE);
+    res.clearCookie(LEGACY_NYK_LINK_USER_COOKIE);
     return this.getViewer(String(userId));
+  }
+
+  private async verifiedNatayarkIdLinkUser(req: Request, state: string) {
+    const token = req.cookies?.[NYK_LINK_CONTEXT_COOKIE];
+    if (!token) return null;
+    let context: { sub?: string; state?: string; purpose?: string };
+    try {
+      context = jwt.verify(String(token), this.sessionSecret()) as typeof context;
+    } catch {
+      throw new UnauthorizedException('NatayarkID 绑定上下文无效或已过期');
+    }
+    if (!context.sub || context.state !== state || context.purpose !== 'natayarkid_link') {
+      throw new UnauthorizedException('NatayarkID 绑定上下文校验失败');
+    }
+    const viewer = await this.viewerFromRequest(req);
+    if (!viewer || viewer.id !== String(context.sub)) {
+      throw new UnauthorizedException('NatayarkID 绑定会话已失效，请重新发起绑定');
+    }
+    return viewer.id;
   }
 
   async loginWithFeishuCode(code: string, res: Response) {
@@ -483,7 +524,11 @@ export class AuthService {
   }
 
   private sessionSecret() {
-    return process.env.SESSION_SECRET || 'dev-session-secret';
+    const secret = process.env.SESSION_SECRET || 'dev-session-secret';
+    if (process.env.NODE_ENV === 'production' && ['dev-session-secret', 'change-me'].includes(secret)) {
+      throw new Error('生产环境必须配置安全的 SESSION_SECRET');
+    }
+    return secret;
   }
 
   private bearerToken(req: Request) {

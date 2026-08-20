@@ -6,6 +6,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/regression.spec.ts",
     "migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {

@@ -31,9 +31,9 @@
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
           <n-gi span="2"><n-form-item label="议题时间"><n-radio-group v-model:value="commentTimeMode"><n-space :size="12" :wrap="true"><n-radio value="short">短周期（{{ timePresets.discussionShortDays }} 天）</n-radio><n-radio value="long">长周期（{{ timePresets.discussionLongDays }} 天）</n-radio><n-radio value="days">手动输入天数</n-radio><n-radio value="specific">手动设定时间</n-radio></n-space></n-radio-group></n-form-item></n-gi>
           <n-gi v-if="commentTimeMode === 'days'" span="2 720:1"><n-form-item label="征集天数"><n-input-number v-model:value="commentDurationDays" :min="1" :max="365" style="width: 100%"><template #suffix>天</template></n-input-number></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi v-if="commentTimeMode === 'specific'" span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableCommentEndDate" /></n-form-item></n-gi>
           <n-gi v-else span="2 720:1"><n-form-item label="意见截止时间"><n-text>{{ commentEndsAt ? formatTime(commentEndsAt) : '未设置' }}</n-text></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableCommentPublishDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="form.maxCommentsPerUser" :min="1" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
         </n-grid>
         <n-space vertical :size="8"><n-checkbox v-model:checked="form.commentAnonymous">意见与回复匿名展示</n-checkbox><n-text depth="3">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-text></n-space>
@@ -49,11 +49,11 @@
             <n-gi span="2"><n-form-item label="投票时间"><n-radio-group v-model:value="voteTimeMode"><n-space :size="12" :wrap="true"><n-radio value="manual">手动开启</n-radio><n-radio value="instant">即时投票（{{ timePresets.voteInstantMinutes }} 分钟）</n-radio><n-radio value="short">短周期投票（{{ timePresets.voteShortMinutes }} 分钟）</n-radio><n-radio value="long">长周期投票（{{ timePresets.voteLongMinutes }} 分钟）</n-radio><n-radio value="minutes">手动输入分钟</n-radio><n-radio value="specific">手动设定时间</n-radio></n-space></n-radio-group></n-form-item></n-gi>
             <template v-if="voteTimeMode !== 'manual' && voteTimeMode !== 'specific'">
               <n-gi span="2 720:1"><n-form-item label="多久后开始投票"><n-input-number v-model:value="voteStartDelayMinutes" :min="0" :max="43200" style="width: 100%"><template #suffix>分钟后</template></n-input-number></n-form-item></n-gi>
-              <n-gi v-if="voteTimeMode === 'minutes'" span="2 720:1"><n-form-item label="投票持续时间"><n-input-number v-model:value="voteDurationMinutes" :min="1" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item></n-gi>
+              <n-gi v-if="voteTimeMode === 'minutes'" span="2 720:1"><n-form-item label="投票持续时间"><n-input-number v-model:value="voteDurationMinutes" :min="MIN_VOTE_DURATION_MINUTES" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item></n-gi>
               <n-gi span="2"><n-form-item label="计划"><n-text>{{ voteStartsAt ? `${formatTime(voteStartsAt)} 至 ${formatTime(voteEndsAt)}` : '未设置' }}</n-text></n-form-item></n-gi>
             </template>
             <template v-else-if="voteTimeMode === 'specific'">
-              <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="voteStartsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableFutureDate" /></n-form-item></n-gi>
               <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableVoteEndDate" /></n-form-item></n-gi>
             </template>
             <n-gi v-else span="2"><n-form-item label="投票计划"><n-text>由创建者在议题页手动开始，并在确认时设置投票时长。</n-text></n-form-item></n-gi>
@@ -95,6 +95,9 @@ import { useSessionStore } from '../stores/session';
 const router = useRouter();
 const message = useMessage();
 const session = useSessionStore();
+const MIN_VOTE_DURATION_MINUTES = 3;
+const MIN_VOTE_DURATION_MS = MIN_VOTE_DURATION_MINUTES * 60 * 1000;
+const CURRENT_TIME_TOLERANCE_MS = 5_000;
 const formRef = ref<FormInst | null>(null);
 const submitting = ref(false);
 const currentStep = ref(1);
@@ -157,6 +160,7 @@ function continueAfterSimilarIssues() {
 
 async function submit() {
   await formRef.value?.validate();
+  if (form.votingEnabled && !['manual', 'specific'].includes(voteTimeMode.value)) applyVotePreset();
   if (!validateTimePlan()) return;
   if (!formOptionsReady.value) {
     message.error('创建配置尚未准备完成，请稍后重试');
@@ -240,16 +244,23 @@ function applyVotePreset() {
         ? timePresets.value.voteLongMinutes
         : voteDurationMinutes.value;
   voteStartsAt.value = Date.now() + Math.max(0, voteStartDelayMinutes.value) * 60 * 1000;
-  voteEndsAt.value = voteStartsAt.value + Math.max(1, duration) * 60 * 1000;
+  voteEndsAt.value = voteStartsAt.value + Math.max(MIN_VOTE_DURATION_MINUTES, duration) * 60 * 1000;
 }
 
 function validateTimePlan() {
-  if (commentEndsAt.value) {
-    const start = commentPublishAt.value || Date.now();
-    if (commentEndsAt.value <= start) {
-      message.error('意见截止时间必须晚于意见开始时间');
-      return false;
-    }
+  const now = Date.now();
+  const configuredTimes = [
+    [commentEndsAt.value, '意见截止时间'],
+    [commentPublishAt.value, '意见统一公布时间'],
+    [voteStartsAt.value, '投票开始时间'],
+    [voteEndsAt.value, '投票结束时间']
+  ] as const;
+  for (const [value, label] of configuredTimes) {
+    if (value && value < now - CURRENT_TIME_TOLERANCE_MS) { message.error(`${label}不能早于当前时间`); return false; }
+  }
+  if (commentEndsAt.value && commentPublishAt.value && commentPublishAt.value <= commentEndsAt.value) {
+    message.error('意见统一公布时间必须晚于意见截止时间');
+    return false;
   }
   if (!form.votingEnabled) return true;
   if (Boolean(voteStartsAt.value) !== Boolean(voteEndsAt.value)) {
@@ -260,15 +271,31 @@ function validateTimePlan() {
     message.error('投票结束时间必须晚于开始时间');
     return false;
   }
+  if (voteEndsAt.value) {
+    const publishAt = commentPublishAt.value || voteStartsAt.value || Date.now();
+    if (voteEndsAt.value < publishAt + MIN_VOTE_DURATION_MS) {
+      message.error(`投票结束时间必须至少晚于意见统一公布时间 ${MIN_VOTE_DURATION_MINUTES} 分钟`);
+      return false;
+    }
+  }
   return true;
 }
 
 function disableCommentEndDate(timestamp: number) {
-  return timestamp < startOfDay(commentPublishAt.value || Date.now());
+  return timestamp < startOfDay(Date.now());
+}
+
+function disableCommentPublishDate(timestamp: number) {
+  return timestamp < startOfDay(commentEndsAt.value || Date.now());
+}
+
+function disableFutureDate(timestamp: number) {
+  return timestamp < startOfDay(Date.now());
 }
 
 function disableVoteEndDate(timestamp: number) {
-  return Boolean(voteStartsAt.value && timestamp < startOfDay(voteStartsAt.value));
+  const baseline = Math.max(Date.now(), voteStartsAt.value || 0, commentPublishAt.value || 0);
+  return timestamp < startOfDay(baseline);
 }
 
 function startOfDay(timestamp: number) {

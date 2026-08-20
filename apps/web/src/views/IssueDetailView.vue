@@ -89,7 +89,7 @@
                     comment.author.displayName.slice(0, 1) }}</n-avatar></template>
                   <n-thing>
                     <template #header><n-space align="center" :size="8"><n-text strong>{{ comment.author.displayName }}</n-text><n-tag v-if="!comment.published" size="small" type="warning" :bordered="false">待统一公布</n-tag></n-space></template>
-                    <template #header-extra><n-tooltip v-if="comment.viewerCanEdit"><template #trigger><n-button text circle size="small" aria-label="编辑意见" @click="startCommentEdit(comment)"><template #icon><n-icon><CreateOutline /></n-icon></template></n-button></template>编辑意见</n-tooltip></template>
+                    <template #header-extra><n-space :size="2"><n-tooltip v-if="comment.viewerCanEdit"><template #trigger><n-button text circle size="small" aria-label="编辑意见" @click="startCommentEdit(comment)"><template #icon><n-icon><CreateOutline /></n-icon></template></n-button></template>编辑意见</n-tooltip><n-tooltip v-if="comment.viewerCanDelete"><template #trigger><n-button text circle size="small" aria-label="删除意见" @click="confirmDeleteComment(comment)"><template #icon><n-icon><TrashOutline /></n-icon></template></n-button></template>删除意见</n-tooltip></n-space></template>
                     <template v-if="editingCommentId === comment.id">
                       <ContentEditor v-model="editingCommentBody" :min-rows="4" />
                       <n-space justify="end" class="comment-edit-actions"><n-button size="small" @click="cancelCommentEdit">取消</n-button><n-button size="small" type="primary" :loading="savingComment" :disabled="!hasContent(editingCommentBody)" @click="saveCommentEdit(comment.id)">保存</n-button></n-space>
@@ -181,15 +181,15 @@
           <n-gi span="2 720:1"><n-form-item label="可见范围"><n-select v-model:value="editVisibility" :options="visibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="查看权限组"><n-select v-model:value="editViewGroupKeys" multiple :options="groupOptions" :disabled="editVisibility !== 'groups'" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="分类"><n-select v-model:value="editLabelIds" multiple :options="labelOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="editCommentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="editCommentEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditCommentEndDate" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="editCommentPublishAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditCommentPublishDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="editMaxCommentsPerUser" :min="1" :max="100" style="width: 100%" /></n-form-item></n-gi>
         </n-grid>
         <n-checkbox v-model:checked="editCommentAnonymous">意见与回复匿名展示</n-checkbox>
         <n-checkbox v-model:checked="editVotingEnabled">启用投票器</n-checkbox>
         <n-grid v-if="editVotingEnabled" :cols="2" :x-gap="16" responsive="screen" item-responsive class="edit-vote-grid">
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="editVoteGroupKeys" multiple :options="groupOptions" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="editVoteStartsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="自动投票开始"><n-date-picker v-model:value="editVoteStartsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditFutureDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="自动投票结束"><n-date-picker v-model:value="editVoteEndsAt" type="datetime" clearable style="width: 100%" :is-date-disabled="disableEditVoteEndDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="editVoteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="editPassRule" :options="passRuleOptions" /></n-form-item></n-gi>
@@ -201,7 +201,7 @@
       <template #footer><n-space justify="end"><n-button @click="showEditor = false">取消</n-button><n-button type="primary" :loading="savingEdit" @click="saveEdit">保存修改</n-button></n-space></template>
     </n-modal>
     <n-modal v-model:show="showStartVotingDialog" preset="dialog" title="开始投票" positive-text="确认开始" negative-text="取消" @positive-click="startVoting" @negative-click="showStartVotingDialog = false">
-      <n-form-item label="投票时长"><n-input-number v-model:value="manualVoteDurationMinutes" :min="1" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item>
+      <n-form-item label="投票时长"><n-input-number v-model:value="manualVoteDurationMinutes" :min="minimumManualVoteMinutes" :max="43200" style="width: 100%"><template #suffix>分钟</template></n-input-number></n-form-item>
     </n-modal>
     <n-modal v-model:show="showCloseDialog" preset="dialog" title="关闭议题" positive-text="确认关闭" negative-text="取消" :positive-button-props="{ loading: closingIssue }" @positive-click="closeIssue" @negative-click="showCloseDialog = false">
       <n-space vertical :size="12"><n-text>关闭后将停止讨论和投票。请选择关闭后的可见范围。</n-text><n-radio-group v-model:value="closeVisibility"><n-space vertical><n-radio value="retain">保持现有可见范围</n-radio><n-radio value="public">公开给所有访客</n-radio><n-radio value="admin_only">仅管理员可见</n-radio></n-space></n-radio-group></n-space>
@@ -223,6 +223,8 @@ const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
+const MIN_VOTE_DURATION_MINUTES = 3;
+const MIN_VOTE_DURATION_MS = MIN_VOTE_DURATION_MINUTES * 60 * 1000;
 const loading = ref(false);
 const detail = ref<any>(null);
 const comments = ref<any[]>([]);
@@ -237,6 +239,10 @@ const editAllowVoteChange = ref(true); const editMaxVoteChanges = ref(1); const 
 const groupOptions = ref<Array<{ label: string; value: string }>>([]); const labelOptions = ref<Array<{ label: string; value: number }>>([]);
 const showCloseDialog = ref(false); const closeVisibility = ref<'retain' | 'public' | 'admin_only'>('retain'); const closingIssue = ref(false);
 const showStartVotingDialog = ref(false); const manualVoteDurationMinutes = ref(60);
+const minimumManualVoteMinutes = computed(() => {
+  const publishAt = detail.value?.issue?.commentPublishAt ? new Date(detail.value.issue.commentPublishAt).getTime() : Date.now();
+  return Math.max(MIN_VOTE_DURATION_MINUTES, Math.ceil((publishAt + MIN_VOTE_DURATION_MS - Date.now()) / 60_000));
+});
 const editingCommentId = ref<string | null>(null); const editingCommentBody = ref(''); const savingComment = ref(false);
 const replyingCommentId = ref<string | null>(null); const replyBody = ref(''); const submittingReply = ref(false);
 const voteChangeBlocked = computed(() => Boolean(detail.value?.myVote) && (!detail.value.issue.allowVoteChange || detail.value.issue.maxVoteChanges === 0 || detail.value.myVote.changeCount >= detail.value.issue.maxVoteChanges));
@@ -280,7 +286,7 @@ async function load() {
     ]);
     detail.value = issueDetail;
     comments.value = issueComments;
-    manualVoteDurationMinutes.value = Math.max(1, Number(config.timePresets?.voteShortMinutes) || 60);
+    manualVoteDurationMinutes.value = Math.max(minimumManualVoteMinutes.value, Number(config.timePresets?.voteShortMinutes) || 60);
     choice.value = null;
     syncEditFields();
   } catch (error) {
@@ -292,6 +298,7 @@ async function load() {
 }
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
+function confirmDeleteComment(comment: any) { dialog.warning({ title: '删除意见', content: '确认删除这条意见吗？相关回复也将不再展示。', positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/issues/${route.params.number}/comments/${comment.id}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已删除'); } catch (error) { message.error(error instanceof Error ? error.message : '删除意见失败'); return false; } } }); }
 async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { if (!comment.viewerCanReact) return; const result = await apiPost<{ reactionCounts: Record<string, number>; myReactions: string[] }>(`/issues/${route.params.number}/comments/${comment.id}/reactions`, { reaction }); comment.reactionCounts = result.reactionCounts; comment.myReactions = result.myReactions; }
 function startReply(comment: any) { replyingCommentId.value = comment.id; replyBody.value = ''; }
 function cancelReply() { replyingCommentId.value = null; replyBody.value = ''; }
@@ -392,13 +399,26 @@ function syncEditFields() {
 function toPickerValue(value: string | null) { return value ? new Date(value).getTime() : null; }
 function toIso(value: number | null) { return value ? new Date(value).toISOString() : null; }
 function validateEditTimePlan() {
-  if (editCommentEndsAt.value && editCommentPublishAt.value && editCommentEndsAt.value <= editCommentPublishAt.value) { message.error('意见截止时间必须晚于意见开始时间'); return false; }
+  const configuredTimes = [
+    [editCommentEndsAt.value, detail.value.issue.commentEndsAt, '意见截止时间'],
+    [editCommentPublishAt.value, detail.value.issue.commentPublishAt, '意见统一公布时间'],
+    [editVoteStartsAt.value, detail.value.issue.voteStartsAt, '投票开始时间'],
+    [editVoteEndsAt.value, detail.value.issue.voteEndsAt, '投票结束时间']
+  ] as const;
+  for (const [value, original, label] of configuredTimes) {
+    if (value && value < Date.now() && value !== toPickerValue(original)) { message.error(`${label}不能早于当前时间`); return false; }
+  }
+  if (editCommentEndsAt.value && editCommentPublishAt.value && editCommentPublishAt.value <= editCommentEndsAt.value) { message.error('意见统一公布时间必须晚于意见截止时间'); return false; }
   if (editVotingEnabled.value && Boolean(editVoteStartsAt.value) !== Boolean(editVoteEndsAt.value)) { message.error('自动投票的开始和结束时间必须同时设置'); return false; }
   if (editVoteStartsAt.value && editVoteEndsAt.value && editVoteEndsAt.value <= editVoteStartsAt.value) { message.error('投票结束时间必须晚于开始时间'); return false; }
+  const votePublicationBaseline = editCommentPublishAt.value || editVoteStartsAt.value;
+  if (editVoteEndsAt.value && votePublicationBaseline && editVoteEndsAt.value < votePublicationBaseline + MIN_VOTE_DURATION_MS) { message.error(`投票结束时间必须至少晚于意见统一公布时间 ${MIN_VOTE_DURATION_MINUTES} 分钟`); return false; }
   return true;
 }
-function disableEditCommentEndDate(timestamp: number) { return Boolean(editCommentPublishAt.value && timestamp < startOfDay(editCommentPublishAt.value)); }
-function disableEditVoteEndDate(timestamp: number) { return Boolean(editVoteStartsAt.value && timestamp < startOfDay(editVoteStartsAt.value)); }
+function disableEditCommentEndDate(timestamp: number) { return timestamp < startOfDay(Date.now()); }
+function disableEditCommentPublishDate(timestamp: number) { return timestamp < startOfDay(editCommentEndsAt.value || Date.now()); }
+function disableEditFutureDate(timestamp: number) { return timestamp < startOfDay(Date.now()); }
+function disableEditVoteEndDate(timestamp: number) { return timestamp < startOfDay(Math.max(Date.now(), editVoteStartsAt.value || 0, editCommentPublishAt.value || 0)); }
 function startOfDay(timestamp: number) { const date = new Date(timestamp); date.setHours(0, 0, 0, 0); return date.getTime(); }
 function hasContent(value: string) { return value.replace(/<[^>]+>/g, '').trim().length > 0; }
 function renderContent(value: string) { const html = /<\/?[a-z][\s\S]*>/i.test(value) ? value : marked.parse(value, { gfm: true, breaks: true }) as string; return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }); }

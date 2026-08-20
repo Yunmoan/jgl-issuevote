@@ -257,6 +257,7 @@ INSERT INTO permission_groups (group_key, name, kind, is_assignable, created_at,
 
 ## 评论统一公布规则
 
+- 设置意见截止时间和统一公布时间时，统一公布时间必须晚于截止时间；新建议题的时间不能早于当前时间。
 - 创建议题时如果设置 `issues.comment_publish_at`，该议题的新评论默认写入同一个 `publish_at`。
 - 若未设置，评论 `publish_at` 与 `published_at` 都写当前时间，表示即时公开。
 - 管理员或作者编辑评论不应改变首次 `publish_at`；是否允许编辑已公开评论由产品设置控制。

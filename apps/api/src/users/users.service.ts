@@ -265,7 +265,8 @@ function normalizedTimePresets(value: unknown) {
   const source = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(defaultTimePresets).map(([key, fallback]) => {
     const candidate = Number(source[key]);
-    return [key, Number.isInteger(candidate) && candidate >= 1 && candidate <= 43_200 ? candidate : fallback];
+    const minimum = key.startsWith('vote') ? 3 : 1;
+    return [key, Number.isInteger(candidate) && candidate >= minimum && candidate <= 43_200 ? candidate : fallback];
   }));
 }
 
@@ -275,8 +276,9 @@ function validateTimePresets(value: unknown) {
   const source = value as Record<string, unknown>;
   for (const key of Object.keys(defaultTimePresets)) {
     const candidate = Number(source[key]);
-    if (!Number.isInteger(candidate) || candidate < 1 || candidate > 43_200) {
-      throw new BadRequestException(`时间预设 ${key} 必须是 1 到 43200 之间的整数`);
+    const minimum = key.startsWith('vote') ? 3 : 1;
+    if (!Number.isInteger(candidate) || candidate < minimum || candidate > 43_200) {
+      throw new BadRequestException(`时间预设 ${key} 必须是 ${minimum} 到 43200 之间的整数`);
     }
   }
   if (normalized.discussionShortDays > normalized.discussionLongDays) {
