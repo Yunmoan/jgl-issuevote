@@ -37,7 +37,7 @@
 
 - 登录源启用开关。
 - 飞书 App ID、组织校验策略只展示配置状态，不展示 secret 明文。
-- NatayarkID OAuth2 端点配置状态。
+- NatayarkID OAuth2 端点配置状态，默认使用 `https://account.naids.com`。
 - 强制绑定策略。
 - 评论编辑策略。
 - 投票结果公开策略默认值。
@@ -106,12 +106,12 @@ FEISHU_APP_SECRET=xxx
 FEISHU_ALLOWED_TENANT_KEYS=
 
 NYK_ENABLED=true
-NYK_OAUTH_AUTHORIZATION_URL=
-NYK_OAUTH_TOKEN_URL=
-NYK_OAUTH_USERINFO_URL=
+NYK_OAUTH_AUTHORIZATION_URL=https://account.naids.com/oauth2/authorize
+NYK_OAUTH_TOKEN_URL=https://account.naids.com/api/oauth2/token
+NYK_OAUTH_USERINFO_URL=https://account.naids.com/api/api/user/data
 NYK_OAUTH_CLIENT_ID=
 NYK_OAUTH_CLIENT_SECRET=
-NYK_OAUTH_SCOPES=openid profile email
+NYK_OAUTH_REDIRECT_URI=https://vote.example.com/api/auth/natayarkid/callback
 ```
 
 ## 验收清单
@@ -124,4 +124,3 @@ NYK_OAUTH_SCOPES=openid profile email
 - 评论统一公布时间生效。
 - 管理员能调整用户组，并立即影响后续权限判断。
 - 所有高风险操作有审计记录。
-

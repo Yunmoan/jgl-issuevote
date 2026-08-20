@@ -18,9 +18,9 @@ Frontend Web App (Vue 3 + Naive UI)
 Backend API (NestJS)
   |        |         |
   |        |         +-- Feishu Open Platform API
-  |        +------------ NatayarkID OAuth2/OIDC
+  |        +------------ NatayarkID OAuth2 (account.naids.com)
   |
-  +-- MySQL 8
+  +-- MariaDB / MySQL 5.7
   +-- Redis
   +-- Object Storage / local uploads
 ```
@@ -101,7 +101,6 @@ docker-compose.yml
 
 - 安全：服务端校验所有权限；登录态使用 HttpOnly Cookie；CSRF 按 SameSite 或 CSRF Token 处理。
 - 审计：管理员操作、投票、改票、议题关闭必须可追溯。
-- 性能：议题列表分页；标签和状态建立索引；计票可先实时聚合，必要时加结果快照。
+- 性能：议题列表分页；标签和状态建立索引；数据库按 MariaDB / MySQL 5.7 公共能力设计，不依赖 MySQL 8 专属能力；计票可先实时聚合，必要时加结果快照。
 - 可维护：配置项进数据库和环境变量，不把组织 ID、Provider 端点写死。
 - 移动端：飞书 WebView、手机浏览器都应可用；PC 端使用更高信息密度。
-

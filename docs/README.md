@@ -5,8 +5,8 @@
 ## 建议技术栈
 
 - 前端：Vue 3、TypeScript、Vite、Naive UI、Pinia、Vue Router、VueUse。
-- 后端：NestJS、TypeScript、Prisma、MySQL 8、Redis。
-- 鉴权：应用内 Session/JWT + OAuth2 身份绑定；飞书网页应用免登；NatayarkID 按 OAuth2/OIDC Provider 接入。
+- 后端：NestJS、TypeScript、TypeORM 或 Knex、mysql2、MariaDB / MySQL 5.7、Redis。
+- 鉴权：应用内 Session/JWT + OAuth2 身份绑定；飞书网页应用免登；NatayarkID 按 `account.naids.com` OAuth2 接入。
 - 部署：Docker Compose 起步，生产环境拆分为 Web、API、MySQL、Redis、对象存储/附件服务。
 
 ## 文档阅读顺序
@@ -18,6 +18,7 @@
 5. [前端 UI 与交互](./05-frontend-ui.md)
 6. [管理后台与运营能力](./06-admin-and-operations.md)
 7. [多 agent 协作拆分](./07-agent-work-breakdown.md)
+8. [Linux 部署说明](./08-linux-deployment.md)
 
 ## 关键产品原则
 

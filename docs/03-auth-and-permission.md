@@ -55,30 +55,81 @@
 - 飞书获取用户访问凭证：<https://open.feishu.cn/document/server-docs/authentication-management/access-token/create-2>
 - 飞书客户端 getUserInfo 限制：<https://open.feishu.cn/document/client-docs/gadget/-web-app-api/open-ability/userinfo/getuserinfo>
 
-## NatayarkID OAuth2/OIDC
+## NatayarkID OAuth2
 
-当前公开资料不如飞书集中，开发时不要把端点写死在代码里。按标准 OAuth2/OIDC Provider 配置：
+NatayarkID 使用 OAuth2 授权码流程。按当前接入指南，固定端点如下：
+
+| 类别 | URL | 方法 |
+| --- | --- | --- |
+| authorizationURL | `https://account.naids.com/oauth2/authorize` | GET |
+| tokenURL | `https://account.naids.com/api/oauth2/token` | POST |
+| userDataURL | `https://account.naids.com/api/api/user/data` | GET |
+
+环境变量建议：
 
 ```env
-NYK_OAUTH_ISSUER=
-NYK_OAUTH_AUTHORIZATION_URL=
-NYK_OAUTH_TOKEN_URL=
-NYK_OAUTH_USERINFO_URL=
+NYK_OAUTH_AUTHORIZATION_URL=https://account.naids.com/oauth2/authorize
+NYK_OAUTH_TOKEN_URL=https://account.naids.com/api/oauth2/token
+NYK_OAUTH_USERINFO_URL=https://account.naids.com/api/api/user/data
 NYK_OAUTH_CLIENT_ID=
 NYK_OAUTH_CLIENT_SECRET=
-NYK_OAUTH_SCOPES=openid profile email
 NYK_OAUTH_REDIRECT_URI=https://example.com/api/auth/natayarkid/callback
 ```
 
 流程：
 
 1. 用户点击 NatayarkID 登录。
-2. 后端生成 `state` 和 PKCE `code_verifier`，写入短期缓存。
-3. 浏览器跳转到授权端点。
-4. 回调校验 `state`，用 code 换 token。
-5. 若是 OIDC，校验 ID Token 签名、issuer、audience、过期时间。
-6. 调 userinfo 或解析 ID Token，取得稳定 subject。
-7. 创建或绑定 `auth_identities(provider='natayarkid')`。
+2. 后端生成 `state`，写入短期缓存。
+3. 浏览器跳转到 `authorizationURL`：
+
+```text
+https://account.naids.com/oauth2/authorize?response_type=code&redirect_uri=${urlEncodedRedirectUri}&client_id=${clientId}&state=${state}
+```
+
+4. NatayarkID 回调：
+
+```text
+${redirect_uri}?code=CODE&state=STATE
+```
+
+5. 后端校验 `state`。
+6. 后端将 `client_secret` 做 `PASSWORD_HASH` 后请求 token。Node.js 实现建议使用 bcrypt，等价于 PHP `password_hash($secret, PASSWORD_DEFAULT)` 的 bcrypt 结果。
+7. 后端 POST JSON 到 `tokenURL`：
+
+```json
+{
+  "grant_type": "authorization_code",
+  "code": "CODE",
+  "client_id": "example",
+  "client_secret": "$2y$10$oQfDIqchgv9xv5UVUo9QNeM7fhqDJj69lZsbU3pPA9NOa0kLgohuS",
+  "redirect_uri": "https%3A%2F%2Fexample.com%2Fauth%2Fcallback"
+}
+```
+
+8. 后端使用返回的 `access_token` 请求用户信息：
+
+```http
+GET https://account.naids.com/api/api/user/data
+Authorization: Bearer ${accessToken}
+```
+
+9. 用户信息返回示例字段包括 `data.id`、`data.username`、`data.email`、`data.realname`、`data.status`、`data.last_login`。
+10. 创建或绑定 `auth_identities(provider='natayarkid')`。
+
+字段映射：
+
+- `provider_subject`：使用 `data.id` 的字符串形式。
+- `provider_user_id`：使用 `data.id` 的字符串形式。
+- `display_name`：优先 `data.username`。
+- `email`：使用 `data.email`。
+- `raw_profile_json`：保存完整返回 JSON 字符串。
+
+注意：
+
+- `redirect_uri` 在授权请求和 token 请求中必须一致；按当前指南，token 请求体内也传 URL 编码后的值。
+- `client_secret` 不直接明文传给 NatayarkID token 接口，而是传 PASSWORD_HASH 结果。
+- `state` 必须校验，防止 CSRF 和登录串号。
+- 当前指南未说明 OIDC、ID Token 或 refresh_token，因此不要按 OIDC 强校验实现。
 
 ## 账号绑定策略
 

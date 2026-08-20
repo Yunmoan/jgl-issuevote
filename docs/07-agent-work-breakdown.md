@@ -6,7 +6,7 @@
 
 - 不擅自改变技术栈；如必须改变，先更新文档并说明原因。
 - 后端权限判断以服务端为准，前端只做展示。
-- 涉及数据库结构变更时，同步更新 Prisma schema、迁移和 `docs/02-database-schema.md`。
+- 涉及数据库结构变更时，同步更新 SQL 迁移、ORM 实体和 `docs/02-database-schema.md`。
 - 涉及 API 变更时，同步更新 OpenAPI 或共享类型和 `docs/04-api-design.md`。
 - UI 变更遵守 `docs/05-frontend-ui.md`。
 - 每个模块至少提供基础测试或可运行验证步骤。
@@ -27,12 +27,12 @@
 - Web 能访问 API health check。
 - README 写清启动命令。
 
-## Agent B：数据库与 Prisma
+## Agent B：数据库与 ORM
 
 目标：
 
-- 按 `docs/02-database-schema.md` 建 Prisma schema。
-- 生成初始迁移。
+- 按 `docs/02-database-schema.md` 建 TypeORM/Knex migration 和实体/查询层。
+- 生成初始 SQL 迁移，必须兼容 MariaDB / MySQL 5.7，不能使用 MySQL 8 专属能力。
 - 编写 seed：系统权限组、示例标签、初始管理员。
 - 建索引和唯一约束。
 
@@ -48,14 +48,14 @@
 目标：
 
 - 实现飞书免登接口。
-- 实现 NatayarkID OAuth2/OIDC 接口。
+- 实现 NatayarkID OAuth2 接口，端点使用 `https://account.naids.com`。
 - 实现登录态、退出、`/api/me`。
 - 实现绑定策略和冲突处理。
 
 重点：
 
 - 飞书 App Secret 只在后端。
-- OAuth2 state/PKCE 校验。
+- NatayarkID `state` 校验，`client_secret` 按接入指南做 PASSWORD_HASH 后提交。
 - 组织租户白名单。
 - 强制绑定状态通过 `nextAction` 返回给前端。
 
@@ -143,4 +143,3 @@
 3. Agent E 在 B/D 基础上推进。
 4. Agent F/G 可先用 mock API 开发，再切真实接口。
 5. Agent H 从第一轮接口稳定后持续补测试。
-
