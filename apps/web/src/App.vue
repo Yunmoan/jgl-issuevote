@@ -12,11 +12,7 @@
                 </RouterLink>
                 <n-menu class="desktop-menu" mode="horizontal" :value="activeKey" :options="menuOptions" @update:value="navigate" />
                 <div class="top-actions">
-                  <n-button-group class="theme-switcher">
-                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'system' ? 'primary' : 'default'" aria-label="跟随系统" @click="setTheme('system')"><template #icon><n-icon><DesktopOutline /></n-icon></template></n-button></template>跟随系统</n-tooltip>
-                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'light' ? 'primary' : 'default'" aria-label="浅色模式" @click="setTheme('light')"><template #icon><n-icon><SunnyOutline /></n-icon></template></n-button></template>浅色模式</n-tooltip>
-                    <n-tooltip><template #trigger><n-button quaternary circle :type="themePreference === 'dark' ? 'primary' : 'default'" aria-label="深色模式" @click="setTheme('dark')"><template #icon><n-icon><MoonOutline /></n-icon></template></n-button></template>深色模式</n-tooltip>
-                  </n-button-group>
+                  <n-tooltip><template #trigger><n-button quaternary circle :aria-label="themeLabel" @click="cycleTheme"><template #icon><n-icon><component :is="themeIcon" /></n-icon></template></n-button></template>{{ themeLabel }}</n-tooltip>
                   <n-button v-if="!session.viewer && session.providers?.natayarkid.enabled" quaternary @click="session.loginWithNatayarkId"><template #icon><n-icon><LogInOutline /></n-icon></template>登录</n-button>
                   <n-button v-if="!session.viewer && session.providers?.devLogin" quaternary @click="session.devLogin">开发登录</n-button>
                   <RouterLink v-if="session.viewer" class="viewer-link" to="/me">
@@ -28,19 +24,21 @@
               </div>
             </n-layout-header>
             <n-layout-content class="page">
-              <Transition name="page-fade" mode="out-in">
-                <div v-if="routeLoading" key="route-skeleton" class="page-skeleton content-wrap">
-                  <n-skeleton text :repeat="1" width="26%" size="medium" />
-                  <n-skeleton text :repeat="1" width="48%" />
-                  <div class="skeleton-panel"><n-skeleton text :repeat="5" /></div>
-                  <div class="skeleton-panel"><n-skeleton text :repeat="3" /></div>
+              <RouterView v-slot="{ Component }"><Transition name="page-fade"><component :is="Component" :key="route.fullPath" /></Transition></RouterView>
+              <Transition name="skeleton-fade">
+                <div v-if="routeLoading" class="page-skeleton-overlay">
+                  <div class="page-skeleton content-wrap">
+                    <n-skeleton text :repeat="1" width="26%" size="medium" />
+                    <n-skeleton text :repeat="1" width="48%" />
+                    <div class="skeleton-panel"><n-skeleton text :repeat="5" /></div>
+                    <div class="skeleton-panel"><n-skeleton text :repeat="3" /></div>
+                  </div>
                 </div>
-                <RouterView v-else v-slot="{ Component }"><component :is="Component" :key="route.fullPath" /></RouterView>
               </Transition>
             </n-layout-content>
             <n-layout-footer bordered class="site-footer"><div>{{ footerText }}</div></n-layout-footer>
           </n-layout>
-          <n-watermark v-if="showWatermark" fullscreen :selectable="false" :content="siteName" :font-size="14" :rotate="-20" :x-gap="170" :y-gap="110" :font-color="resolvedTheme === 'dark' ? 'rgba(255, 255, 255, .09)' : 'rgba(22, 119, 255, .10)'" />
+          <n-watermark v-if="showWatermark" cross fullscreen :selectable="false" :content="siteName+'\n用户 '+session.user?.displayName" :font-size="16" :line-height="16" :rotate="-15" :width="384" :height="156"  :x-offset="12"    :y-offset="60"/>
           <n-drawer v-model:show="showMobileNav" placement="right" :width="280">
             <n-drawer-content :title="siteName" closable body-content-style="padding: 8px"><n-menu :value="activeKey" :options="menuOptions" @update:value="navigate" /></n-drawer-content>
           </n-drawer>
@@ -54,7 +52,7 @@
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { CheckmarkCircleOutline, CreateOutline, DesktopOutline, DocumentTextOutline, LogInOutline, MenuOutline, MoonOutline, PersonOutline, SettingsOutline, SunnyOutline } from '@vicons/ionicons5';
-import { darkTheme, NAvatar, NButton, NButtonGroup, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NSkeleton, NTooltip, NWatermark } from 'naive-ui';
+import { darkTheme, NAvatar, NButton, NConfigProvider, NDialogProvider, NDrawer, NDrawerContent, NIcon, NLayout, NLayoutContent, NLayoutFooter, NLayoutHeader, NLoadingBarProvider, NMenu, NMessageProvider, NSkeleton, NTooltip, NWatermark } from 'naive-ui';
 import type { MenuOption } from 'naive-ui';
 import { apiGet } from './api';
 import { useSessionStore } from './stores/session';
@@ -73,9 +71,12 @@ const routeLoading = ref(false);
 const prefersDark = ref(false);
 let systemThemeQuery: MediaQueryList | null = null;
 let routeLoadingTimer: number | null = null;
+let routeLoadingDelayTimer: number | null = null;
 const themePreference = ref<ThemePreference>(readThemePreference());
 const resolvedTheme = computed(() => themePreference.value === 'system' ? (prefersDark.value ? 'dark' : 'light') : themePreference.value);
 const naiveTheme = computed(() => resolvedTheme.value === 'dark' ? darkTheme : null);
+const themeIcon = computed(() => themePreference.value === 'system' ? DesktopOutline : themePreference.value === 'light' ? SunnyOutline : MoonOutline);
+const themeLabel = computed(() => ({ system: '跟随系统', light: '浅色模式', dark: '深色模式' })[themePreference.value]);
 const showWatermark = computed(() => watermarkMode.value === 'global' || (watermarkMode.value === 'issue' && route.path.startsWith('/issues/')));
 const themeOverrides = { common: { primaryColor: '#1677ff', primaryColorHover: '#4096ff', primaryColorPressed: '#0958d9', primaryColorSuppl: '#1677ff', borderRadius: '6px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } };
 
@@ -91,6 +92,7 @@ const activeKey = computed(() => route.path.startsWith('/issues/new') ? '/issues
 
 function navigate(key: string) { showMobileNav.value = false; router.push(key); }
 function setTheme(value: ThemePreference) { themePreference.value = value; localStorage.setItem('jgl-theme-preference', value); }
+function cycleTheme() { setTheme(themePreference.value === 'system' ? 'light' : themePreference.value === 'light' ? 'dark' : 'system'); }
 function readThemePreference(): ThemePreference { const value = localStorage.getItem('jgl-theme-preference'); return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'; }
 async function loadSiteConfig() {
   try {
@@ -102,8 +104,17 @@ async function loadSiteConfig() {
 }
 function updateSiteConfig(event: Event) { const value = (event as CustomEvent<Partial<{ siteName: string; footerText: string; watermarkMode: WatermarkMode }>>).detail; if (value?.siteName?.trim()) siteName.value = value.siteName.trim(); if (typeof value?.footerText === 'string') footerText.value = value.footerText.trim() || `版权所有 © ${new Date().getFullYear()} ${siteName.value}`; if (value?.watermarkMode) watermarkMode.value = value.watermarkMode; }
 function updateSystemTheme(event: MediaQueryListEvent) { prefersDark.value = event.matches; }
-const removeBeforeNavigation = router.beforeEach(() => { if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer); routeLoading.value = true; });
-const removeAfterNavigation = router.afterEach(() => { routeLoadingTimer = window.setTimeout(() => { routeLoading.value = false; routeLoadingTimer = null; }, 160); });
+const removeBeforeNavigation = router.beforeEach(() => {
+  if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer);
+  if (routeLoadingDelayTimer !== null) window.clearTimeout(routeLoadingDelayTimer);
+  routeLoading.value = false;
+  routeLoadingDelayTimer = window.setTimeout(() => { routeLoading.value = true; routeLoadingDelayTimer = null; }, 180);
+});
+const removeAfterNavigation = router.afterEach(() => {
+  if (routeLoadingDelayTimer !== null) window.clearTimeout(routeLoadingDelayTimer);
+  routeLoadingDelayTimer = null;
+  if (routeLoading.value) routeLoadingTimer = window.setTimeout(() => { routeLoading.value = false; routeLoadingTimer = null; }, 80);
+});
 watch(siteName, (value) => { document.title = value; }, { immediate: true });
 watch(resolvedTheme, (value) => { document.documentElement.style.colorScheme = value; });
 onMounted(() => {
@@ -114,5 +125,5 @@ onMounted(() => {
   loadSiteConfig();
   window.addEventListener('site-config-updated', updateSiteConfig);
 });
-onBeforeUnmount(() => { if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer); removeBeforeNavigation(); removeAfterNavigation(); systemThemeQuery?.removeEventListener('change', updateSystemTheme); window.removeEventListener('site-config-updated', updateSiteConfig); });
+onBeforeUnmount(() => { if (routeLoadingTimer !== null) window.clearTimeout(routeLoadingTimer); if (routeLoadingDelayTimer !== null) window.clearTimeout(routeLoadingDelayTimer); removeBeforeNavigation(); removeAfterNavigation(); systemThemeQuery?.removeEventListener('change', updateSystemTheme); window.removeEventListener('site-config-updated', updateSiteConfig); });
 </script>

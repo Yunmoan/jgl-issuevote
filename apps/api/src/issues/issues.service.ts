@@ -17,6 +17,8 @@ export const createIssueSchema = z.object({
   voteEndsAt: z.string().datetime().nullable().optional(),
   voteVisibility: z.enum(['counts_after_vote', 'counts_after_close', 'names_after_close', 'admin_only']).default('counts_after_close'),
   allowVoteChange: z.boolean().default(true),
+  maxVoteChanges: z.number().int().min(0).max(100).default(1),
+  maxCommentsPerUser: z.number().int().min(1).max(100).default(3),
   quorumCount: z.number().int().positive().nullable().optional(),
   passRule: z.enum(['simple_majority', 'two_thirds', 'custom']).default('simple_majority')
 });
@@ -107,10 +109,10 @@ export class IssuesService implements OnModuleInit {
     const result = await this.db.exec(
       `INSERT INTO issues
        (number, title, body_md, status, visibility, comment_publish_at, comment_ends_at, vote_starts_at, vote_ends_at,
-        vote_visibility, allow_vote_change, quorum_count, pass_rule, created_by, created_at, updated_at)
+        vote_visibility, allow_vote_change, max_vote_changes, max_comments_per_user, quorum_count, pass_rule, created_by, created_at, updated_at)
        VALUES
        (:number, :title, :bodyMd, 'open', :visibility, :commentPublishAt, :commentEndsAt, :voteStartsAt, :voteEndsAt,
-        :voteVisibility, :allowVoteChange, :quorumCount, :passRule, :createdBy, :now, :now)`,
+        :voteVisibility, :allowVoteChange, :maxVoteChanges, :maxCommentsPerUser, :quorumCount, :passRule, :createdBy, :now, :now)`,
       {
         number: next.next_number,
         title: input.title,
@@ -122,6 +124,8 @@ export class IssuesService implements OnModuleInit {
         voteEndsAt: toSqlDate(input.voteEndsAt || null),
         voteVisibility: input.voteVisibility,
         allowVoteChange: input.allowVoteChange,
+        maxVoteChanges: input.maxVoteChanges,
+        maxCommentsPerUser: input.maxCommentsPerUser,
         quorumCount: input.quorumCount || null,
         passRule: input.passRule,
         createdBy: viewer.id,
@@ -148,18 +152,26 @@ export class IssuesService implements OnModuleInit {
       throw new NotFoundException('议题不存在或不可见');
     }
 
-    const [labels, viewGroups, voteGroups, summary, myVote] = await Promise.all([
+    const [labels, viewGroups, voteGroups, summary, myVote, myCommentCount] = await Promise.all([
       this.labelsForIssues([issue.id]),
       this.groupsForIssue('issue_view_groups', issue.id),
       this.groupsForIssue('issue_vote_groups', issue.id),
       this.voteSummary(issue, viewer),
       viewer
-        ? this.db.first(`SELECT choice, cast_at FROM issue_votes WHERE issue_id = :issueId AND voter_id = :viewerId`, {
+        ? this.db.first(`SELECT choice, cast_at, change_count FROM issue_votes WHERE issue_id = :issueId AND voter_id = :viewerId`, {
+            issueId: issue.id,
+            viewerId: viewer.id
+          })
+        : null,
+      viewer
+        ? this.db.first(`SELECT COUNT(*) AS count FROM issue_comments WHERE issue_id = :issueId AND author_id = :viewerId AND deleted_at IS NULL`, {
             issueId: issue.id,
             viewerId: viewer.id
           })
         : null
     ]);
+    const canCommentAtThisTime = this.canCommentOnIssue(issue, viewer);
+    const commentCount = Number(myCommentCount?.count || 0);
 
     return {
       issue: {
@@ -175,6 +187,8 @@ export class IssuesService implements OnModuleInit {
         voteEndsAt: issue.vote_ends_at,
         voteVisibility: issue.vote_visibility,
         allowVoteChange: Boolean(issue.allow_vote_change),
+        maxVoteChanges: Number(issue.max_vote_changes),
+        maxCommentsPerUser: Number(issue.max_comments_per_user),
         quorumCount: issue.quorum_count,
         passRule: issue.pass_rule,
         createdByName: issue.created_by_name,
@@ -186,13 +200,16 @@ export class IssuesService implements OnModuleInit {
         voteGroups
       },
       viewer: {
-        canComment: Boolean(viewer) && issue.status === 'open' && (!issue.comment_ends_at || new Date(issue.comment_ends_at).getTime() >= Date.now()),
+        canComment: canCommentAtThisTime && commentCount < Number(issue.max_comments_per_user),
+        canEditComment: canCommentAtThisTime,
+        commentCount,
+        commentRemaining: Math.max(Number(issue.max_comments_per_user) - commentCount, 0),
         canVote: await this.canVote(issue, viewer),
         canEdit: Boolean(viewer && (viewer.groups.includes('admin') || String(issue.created_by) === viewer.id)),
         canModerate: Boolean(viewer?.groups.includes('admin'))
       },
       voteSummary: summary,
-      myVote: myVote ? { choice: myVote.choice, castAt: myVote.cast_at } : null
+      myVote: myVote ? { choice: myVote.choice, castAt: myVote.cast_at, changeCount: Number(myVote.change_count) } : null
     };
   }
 
@@ -200,7 +217,7 @@ export class IssuesService implements OnModuleInit {
     const { issue } = await this.getByNumber(number, viewer);
     const canModerate = Boolean(viewer?.groups.includes('admin'));
     const rows = await this.db.rows(
-      `SELECT c.id, c.body_md, c.publish_at, c.published_at, c.created_at, c.updated_at,
+      `SELECT c.id, c.body_md, c.publish_at, c.published_at, c.edited_at, c.created_at, c.updated_at,
               u.id AS author_id, u.display_name AS author_name, u.avatar_url AS author_avatar
        FROM issue_comments c
        JOIN users u ON u.id = c.author_id
@@ -219,6 +236,7 @@ export class IssuesService implements OnModuleInit {
       bodyMd: row.body_md,
       publishAt: row.publish_at,
       published: !row.publish_at || new Date(row.publish_at).getTime() <= Date.now(),
+      editedAt: row.edited_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       author: {
@@ -226,13 +244,21 @@ export class IssuesService implements OnModuleInit {
         displayName: row.author_name,
         avatarUrl: row.author_avatar
       },
-      viewerCanSeeBeforePublish: canModerate || String(row.author_id) === viewer?.id
+      viewerCanSeeBeforePublish: canModerate || String(row.author_id) === viewer?.id,
+      viewerCanEdit: Boolean(viewer && String(row.author_id) === viewer.id && this.canCommentOnIssue(issue, viewer))
     }));
   }
 
   async createComment(number: string, bodyMd: string, viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     if (!detail.viewer.canComment) throw new ForbiddenException('无评论权限');
+    const count = await this.db.first(`SELECT COUNT(*) AS count FROM issue_comments WHERE issue_id = :issueId AND author_id = :authorId AND deleted_at IS NULL`, {
+      issueId: detail.issue.id,
+      authorId: viewer.id
+    });
+    if (Number(count?.count || 0) >= detail.issue.maxCommentsPerUser) {
+      throw new ForbiddenException(`每位成员最多可发表 ${detail.issue.maxCommentsPerUser} 条意见`);
+    }
     const publishAt = detail.issue.commentPublishAt ? toSqlDate(detail.issue.commentPublishAt) : nowSql();
     const publishedAt = publishAt && new Date(publishAt).getTime() <= Date.now() ? nowSql() : null;
     const now = nowSql();
@@ -245,22 +271,45 @@ export class IssuesService implements OnModuleInit {
     return (await this.comments(number, viewer)).find((comment) => comment.id === String(result.insertId));
   }
 
+  async updateComment(number: string, commentId: string, bodyMd: string, viewer: Viewer) {
+    const detail = await this.getByNumber(number, viewer);
+    if (!this.canCommentOnIssue(detail.issue, viewer)) throw new ForbiddenException('当前不能修改意见');
+    const comment = await this.db.first(
+      `SELECT id, author_id FROM issue_comments WHERE id = :commentId AND issue_id = :issueId AND deleted_at IS NULL`,
+      { commentId, issueId: detail.issue.id }
+    );
+    if (!comment) throw new NotFoundException('意见不存在');
+    if (String(comment.author_id) !== viewer.id) throw new ForbiddenException('只能修改自己发表的意见');
+    const now = nowSql();
+    await this.db.exec(
+      `UPDATE issue_comments SET body_md = :bodyMd, edited_at = :now, updated_at = :now WHERE id = :commentId`,
+      { bodyMd, now, commentId }
+    );
+    await this.audit(viewer.id, 'comment.edit', 'issue_comment', String(commentId), { issueNumber: number });
+    return (await this.comments(number, viewer)).find((item) => item.id === String(commentId));
+  }
+
   async vote(number: string, choice: VoteChoice, reason: string | undefined, viewer: Viewer) {
     const detail = await this.getByNumber(number, viewer);
     if (!detail.viewer.canVote) throw new ForbiddenException('当前用户无投票权限或不在投票时间内');
     const existing = await this.db.first(
-      `SELECT choice FROM issue_votes WHERE issue_id = :issueId AND voter_id = :voterId`,
+      `SELECT choice, change_count FROM issue_votes WHERE issue_id = :issueId AND voter_id = :voterId`,
       { issueId: detail.issue.id, voterId: viewer.id }
     );
     if (existing && !detail.issue.allowVoteChange) {
       throw new ForbiddenException('该议题不允许改票');
     }
+    if (existing && Number(existing.change_count) >= detail.issue.maxVoteChanges) {
+      throw new ForbiddenException(`该议题最多允许修改投票 ${detail.issue.maxVoteChanges} 次`);
+    }
     const now = nowSql();
     if (existing) {
-      await this.db.exec(
-        `UPDATE issue_votes SET choice = :choice, updated_at = :now WHERE issue_id = :issueId AND voter_id = :voterId`,
-        { issueId: detail.issue.id, voterId: viewer.id, choice, now }
+      const result = await this.db.exec(
+        `UPDATE issue_votes SET choice = :choice, change_count = change_count + 1, updated_at = :now
+         WHERE issue_id = :issueId AND voter_id = :voterId AND change_count < :maxVoteChanges`,
+        { issueId: detail.issue.id, voterId: viewer.id, choice, now, maxVoteChanges: detail.issue.maxVoteChanges }
       );
+      if (result.affectedRows === 0) throw new ConflictException('投票修改次数已达到上限，请刷新后重试');
     } else {
       await this.db.exec(
         `INSERT INTO issue_votes (issue_id, voter_id, choice, cast_at, updated_at)
@@ -317,9 +366,10 @@ export class IssuesService implements OnModuleInit {
     await this.db.exec(
       `UPDATE issues SET title = :title, body_md = :bodyMd, visibility = :visibility, comment_publish_at = :commentPublishAt,
        comment_ends_at = :commentEndsAt, vote_starts_at = :voteStartsAt, vote_ends_at = :voteEndsAt, vote_visibility = :voteVisibility,
-       allow_vote_change = :allowVoteChange, quorum_count = :quorumCount, pass_rule = :passRule, content_edited_at = :now, updated_at = :now
+       allow_vote_change = :allowVoteChange, max_vote_changes = :maxVoteChanges, max_comments_per_user = :maxCommentsPerUser,
+       quorum_count = :quorumCount, pass_rule = :passRule, content_edited_at = :now, updated_at = :now
        WHERE id = :issueId`,
-      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), voteStartsAt: toSqlDate(input.voteStartsAt || null), voteEndsAt: toSqlDate(input.voteEndsAt || null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, quorumCount: input.quorumCount || null, passRule: input.passRule, now, issueId: detail.issue.id }
+      { title: input.title, bodyMd: input.bodyMd, visibility: input.visibility, commentPublishAt: toSqlDate(input.commentPublishAt || null), commentEndsAt: toSqlDate(input.commentEndsAt || null), voteStartsAt: toSqlDate(input.voteStartsAt || null), voteEndsAt: toSqlDate(input.voteEndsAt || null), voteVisibility: input.voteVisibility, allowVoteChange: input.allowVoteChange, maxVoteChanges: input.maxVoteChanges, maxCommentsPerUser: input.maxCommentsPerUser, quorumCount: input.quorumCount || null, passRule: input.passRule, now, issueId: detail.issue.id }
     );
     await this.replaceLabels(detail.issue.id, input.labelIds);
     await this.replaceIssueGroups('issue_view_groups', detail.issue.id, input.viewGroupKeys);
@@ -428,6 +478,10 @@ export class IssuesService implements OnModuleInit {
       { issueId: issue.id, viewerId: viewer.id }
     );
     return Boolean(row);
+  }
+
+  private canCommentOnIssue(issue: any, viewer: Viewer | null) {
+    return Boolean(viewer) && issue.status === 'open' && (!issue.comment_ends_at || new Date(issue.comment_ends_at).getTime() >= Date.now());
   }
 
   private async canVote(issue: any, viewer: Viewer | null) {

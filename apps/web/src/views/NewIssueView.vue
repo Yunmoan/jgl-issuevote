@@ -22,6 +22,7 @@
           <n-gi span="2 720:1"><n-form-item label="投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :options="groupOptions" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="form.maxCommentsPerUser" :min="1" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
         </n-grid>
         <n-alert type="info" :bordered="false">不设置意见公布时间时，符合查看权限的用户会立即看到新意见。</n-alert>
       </n-card>
@@ -32,6 +33,7 @@
           <n-gi span="2 720:1"><n-form-item label="投票结束"><n-date-picker v-model:value="voteEndsAt" type="datetime" clearable style="width: 100%" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility" :options="voteVisibilityOptions" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
+          <n-gi span="2 720:1"><n-form-item label="每人最多修改投票次数"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100" style="width: 100%"><template #suffix>次</template></n-input-number></n-form-item></n-gi>
         </n-grid>
         <n-space vertical :size="10"><n-checkbox v-model:checked="form.allowVoteChange">投票结束前允许修改自己的选择</n-checkbox></n-space>
       </n-card>
@@ -52,7 +54,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { AddCircleOutline, ArrowBackOutline, ArrowForwardOutline } from '@vicons/ionicons5';
-import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NSelect, NSpace, NStep, NSteps, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCard, NCheckbox, NDatePicker, NForm, NFormItem, NGi, NGrid, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, useMessage } from 'naive-ui';
 import type { FormInst, FormRules } from 'naive-ui';
 import { apiGet, apiPost } from '../api';
 import ContentEditor from '../components/ContentEditor.vue';
@@ -68,7 +70,7 @@ const commentPublishAt = ref<number | null>(null);
 const commentEndsAt = ref<number | null>(null);
 const voteStartsAt = ref<number | null>(null);
 const voteEndsAt = ref<number | null>(null);
-const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, passRule: 'simple_majority' });
+const form = reactive({ title: '', bodyMd: '', visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, passRule: 'simple_majority' });
 const rules: FormRules = { title: [{ required: true, message: '请填写议题标题', trigger: ['input', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];

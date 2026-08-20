@@ -86,6 +86,13 @@ export class IssuesController {
     return { data: await this.issues.createComment(number, parsed.bodyMd, viewer) };
   }
 
+  @Put('issues/:number/comments/:commentId')
+  async updateComment(@Param('number') number: string, @Param('commentId') commentId: string, @Body() body: unknown, @Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    const parsed = z.object({ bodyMd: z.string().min(1) }).parse(body);
+    return { data: await this.issues.updateComment(number, commentId, parsed.bodyMd, viewer) };
+  }
+
   @Post('issues/:number/vote')
   async voteByPost(@Param('number') number: string, @Body() body: unknown, @Req() req: Request) {
     return this.castVote(number, body, req);
