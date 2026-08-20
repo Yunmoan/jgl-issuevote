@@ -149,17 +149,17 @@ export class AuthService {
     const hashedSecret = await natayarkPasswordHash(clientSecret);
     let tokenResponse;
     try {
-      // NatayarkID requires JSON here. Its redirect URI contract expects the
-      // URI value itself to remain URL-encoded inside the JSON string.
-      const tokenBody = {
+      // The live NatayarkID token endpoint parses form data. Pass the raw
+      // callback URL here: URLSearchParams performs the only wire encoding.
+      const tokenBody = new URLSearchParams({
         grant_type: 'authorization_code',
         code,
         client_id: clientId,
         client_secret: hashedSecret,
-        redirect_uri: encodeURIComponent(redirectUri)
-      };
+        redirect_uri: redirectUri
+      });
       tokenResponse = await axios.post(tokenUrl, tokenBody, {
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
     } catch (error) {
       this.throwNatayarkIdRequestError('授权码换取', error);

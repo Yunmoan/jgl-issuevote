@@ -97,16 +97,10 @@ ${redirect_uri}?code=CODE&state=STATE
 
 5. 后端校验 `state`。
 6. 后端将 `client_secret` 做 `PASSWORD_HASH` 后请求 token。Natayark 要求 PHP bcrypt 标识 `$2y$10$...`；Node.js 的 bcryptjs 默认生成 `$2a$`，因此必须只替换前缀为 `$2y$` 后再提交。
-7. 后端以 `application/json` POST 到 `tokenURL`。其中 `redirect_uri` 的 JSON 字符串值保持一次 URL 编码：
+7. 后端以 `application/x-www-form-urlencoded` POST 到 `tokenURL`。生产端点实际按表单解析请求；代码中传入原始的 `redirect_uri`，由表单编码器在发送时编码一次，服务端解析后可得到与授权阶段相同的原始地址：
 
-```json
-{
-  "grant_type": "authorization_code",
-  "code": "CODE",
-  "client_id": "example",
-  "client_secret": "$2y$10$...",
-  "redirect_uri": "https%3A%2F%2Fexample.com%2Fauth%2Fcallback"
-}
+```text
+grant_type=authorization_code&code=CODE&client_id=example&client_secret=%242y%2410%24...&redirect_uri=https%3A%2F%2Fexample.com%2Fauth%2Fcallback
 ```
 
 8. 后端使用返回的 `access_token` 请求用户信息：
@@ -129,7 +123,7 @@ Authorization: Bearer ${accessToken}
 
 注意：
 
-- `redirect_uri` 在授权请求和 token 请求中必须一致；按当前指南，token 请求体内也传 URL 编码后的值。
+- `redirect_uri` 在授权请求和 token 请求中必须一致。表单请求在网络上传输时会编码该字段，但应用代码不得预编码，否则会形成双重编码。
 - `client_secret` 不直接明文传给 NatayarkID token 接口，而是传 `$2y$` 前缀的 PASSWORD_HASH 结果。
 - `state` 必须校验，防止 CSRF 和登录串号。
 - 当前指南未说明 OIDC、ID Token 或 refresh_token，因此不要按 OIDC 强校验实现。
