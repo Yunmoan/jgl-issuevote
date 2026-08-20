@@ -35,6 +35,12 @@ export class AuthController {
     return { data: await this.auth.bindFeishuCode(parsed.code, viewer.id, res) };
   }
 
+  @Post('auth/feishu/departments/sync')
+  async refreshFeishuDepartments(@Req() req: Request) {
+    const viewer = await this.auth.requireViewer(req);
+    return { data: await this.auth.refreshFeishuDepartments(viewer.id) };
+  }
+
   @Get('auth/natayarkid/start')
   async startNyk(@Res() res: Response) {
     const url = await this.auth.startNatayarkId(res);

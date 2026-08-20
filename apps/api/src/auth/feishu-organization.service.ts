@@ -6,6 +6,7 @@ import { nowSql } from '../db/sql-time';
 import type { Viewer } from '../types';
 
 const FEISHU_API_BASE = 'https://open.feishu.cn/open-apis';
+const FEISHU_ROOT_DEPARTMENT_ID = '0';
 
 type FeishuDepartment = {
   open_department_id?: string;
@@ -14,6 +15,10 @@ type FeishuDepartment = {
   leader_user_id?: string;
   leaders?: Array<{ leader_id?: string; leader_type?: string }>;
   member_count?: number;
+};
+
+type FeishuUser = {
+  department_ids?: unknown;
 };
 
 @Injectable()
@@ -42,24 +47,32 @@ export class FeishuOrganizationService {
 
   async syncUserDepartments(userId: string, openId: string) {
     const token = await this.tenantAccessToken();
-    const user = await this.feishuGet<{ user?: { department_ids?: unknown } }>(
+    const user = await this.feishuGet<{ user?: FeishuUser }>(
       `/contact/v3/users/${encodeURIComponent(openId)}`,
       token,
       { user_id_type: 'open_id', department_id_type: 'open_department_id' }
     );
-    const departmentIds = uniqueDepartmentIds(user.user?.department_ids);
+    const departmentIds = requireOpenDepartmentIds(user.user);
     const groupIds: string[] = [];
     for (const departmentId of departmentIds) {
       const group = await this.departmentGroup(departmentId, token);
       groupIds.push(String(group.group_id));
+    }
+    // Resolve every department before changing memberships so an API failure
+    // cannot leave the user with a partially refreshed department set.
+    for (const groupId of groupIds) {
       await this.db.exec(
         `INSERT IGNORE INTO user_group_memberships (user_id, group_id, source, created_at)
          VALUES (:userId, :groupId, 'feishu_org', :now)`,
-        { userId, groupId: group.group_id, now: nowSql() }
+        { userId, groupId, now: nowSql() }
       );
     }
     await this.removeStaleUserDepartments(userId, groupIds);
     return { departmentIds, synced: groupIds.length };
+  }
+
+  async clearUserDepartments(userId: string) {
+    await this.removeStaleUserDepartments(userId, []);
   }
 
   private async tenantAccessToken() {
@@ -88,49 +101,46 @@ export class FeishuOrganizationService {
     let pageToken: string | undefined;
     do {
       const data = await this.feishuGet<{ items?: FeishuDepartment[]; has_more?: boolean; page_token?: string }>(
-        '/contact/v3/departments',
+        `/contact/v3/departments/${FEISHU_ROOT_DEPARTMENT_ID}/children`,
         token,
         {
-          department_id: '0',
-          // In Feishu, the root node's fixed ID "0" is a department_id, not an
-          // open_department_id. Passing the latter makes the API return only
-          // the root node, which is intentionally excluded below.
-          department_id_type: 'department_id',
-          fetch_child: 'true',
+          // "0" is Feishu's special root sentinel and is valid while the API's
+          // department ID type remains open_department_id.
+          department_id_type: 'open_department_id',
+          fetch_child: true,
           page_size: 50,
           ...(pageToken ? { page_token: pageToken } : {})
         }
       );
       for (const department of data.items || []) {
-        const id = String(department.open_department_id || '').trim();
-        if (isChildDepartmentId(id)) ids.add(id);
+        ids.add(requireOpenDepartmentId(department));
       }
       pageToken = data.has_more && data.page_token ? data.page_token : undefined;
     } while (pageToken);
     return this.departmentDetails([...ids], token);
   }
 
-  private async departmentGroup(departmentId: string, token: string) {
-    if (!isChildDepartmentId(departmentId)) throw new BadRequestException('飞书根部门不能作为权限组同步');
+  private async departmentGroup(openDepartmentId: string, token: string) {
+    if (!isOpenDepartmentId(openDepartmentId)) throw new BadRequestException('飞书部门缺少有效的 open_department_id');
     const existing = await this.db.first(
       `SELECT fdg.group_id FROM feishu_department_groups fdg WHERE fdg.department_id = :departmentId`,
-      { departmentId }
+      { departmentId: openDepartmentId }
     );
     if (existing) return existing;
-    const [department] = await this.departmentDetails([departmentId], token);
+    const [department] = await this.departmentDetails([openDepartmentId], token);
     if (!department?.open_department_id) throw new BadGatewayException('飞书部门信息缺少 open_department_id');
     await this.upsertDepartment(department);
     const group = await this.db.first(
       `SELECT fdg.group_id FROM feishu_department_groups fdg WHERE fdg.department_id = :departmentId`,
-      { departmentId }
+      { departmentId: openDepartmentId }
     );
     if (!group) throw new BadGatewayException('飞书部门权限组创建失败');
     return group;
   }
 
-  private async departmentDetails(departmentIds: string[], token: string) {
+  private async departmentDetails(openDepartmentIds: string[], token: string) {
     const all = new Map<string, FeishuDepartment>();
-    for (const ids of chunks([...new Set(departmentIds.filter(isChildDepartmentId))], 50)) {
+    for (const ids of chunks([...new Set(openDepartmentIds.filter(isOpenDepartmentId))], 50)) {
       if (!ids.length) continue;
       const data = await this.feishuGet<{ items?: FeishuDepartment[] }>(
         '/contact/v3/departments/batch',
@@ -138,8 +148,7 @@ export class FeishuOrganizationService {
         { department_ids: ids, department_id_type: 'open_department_id' }
       );
       for (const department of data.items || []) {
-        const id = String(department.open_department_id || '').trim();
-        if (isChildDepartmentId(id)) all.set(id, department);
+        all.set(requireOpenDepartmentId(department), department);
       }
     }
     return [...all.values()];
@@ -148,9 +157,9 @@ export class FeishuOrganizationService {
   private async upsertDepartment(department: FeishuDepartment) {
     const departmentId = String(department.open_department_id || '').trim();
     if (!departmentId) throw new BadGatewayException('飞书部门信息缺少 open_department_id');
-    if (!isChildDepartmentId(departmentId)) throw new BadRequestException('飞书根部门不能作为权限组同步');
+    if (!isOpenDepartmentId(departmentId)) throw new BadGatewayException('飞书部门的 open_department_id 格式无效');
     const name = truncate(String(department.name || departmentId).trim(), 80);
-    const parentDepartmentId = department.parent_department_id ? String(department.parent_department_id) : null;
+    const parentDepartmentId = normalizeParentOpenDepartmentId(department.parent_department_id);
     const now = nowSql();
     const mapping = await this.db.first(
       `SELECT group_id FROM feishu_department_groups WHERE department_id = :departmentId`,
@@ -230,12 +239,34 @@ export class FeishuOrganizationService {
   }
 }
 
-function uniqueDepartmentIds(value: unknown) {
-  return [...new Set((Array.isArray(value) ? value : []).map((item) => String(item).trim()).filter(isChildDepartmentId))];
+function requireOpenDepartmentIds(user: FeishuUser | undefined) {
+  if (!user || !Array.isArray(user.department_ids)) {
+    throw new BadGatewayException('飞书用户信息未返回 department_ids，请为应用开通“获取用户组织架构信息”字段权限并确认通讯录权限范围包含该用户');
+  }
+  const ids = user.department_ids.map((item) => String(item).trim());
+  if (ids.some((id) => !isOpenDepartmentId(id))) {
+    throw new BadGatewayException('飞书用户所属部门未按 open_department_id 返回');
+  }
+  return [...new Set(ids)];
 }
 
-function isChildDepartmentId(id: string) {
-  return Boolean(id) && id !== '0';
+function requireOpenDepartmentId(department: FeishuDepartment) {
+  const id = String(department.open_department_id || '').trim();
+  if (!isOpenDepartmentId(id)) throw new BadGatewayException('飞书部门信息缺少有效的 open_department_id');
+  return id;
+}
+
+function normalizeParentOpenDepartmentId(value: unknown) {
+  if (value === undefined || value === null || value === '') return null;
+  const id = String(value).trim();
+  if (id !== FEISHU_ROOT_DEPARTMENT_ID && !isOpenDepartmentId(id)) {
+    throw new BadGatewayException('飞书父部门未按 open_department_id 返回');
+  }
+  return id;
+}
+
+function isOpenDepartmentId(id: string) {
+  return id.startsWith('od-') && id.length > 3;
 }
 
 function truncate(value: string, limit: number) {

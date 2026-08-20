@@ -132,9 +132,13 @@ Authorization: Bearer ${accessToken}
 
 ## 飞书部门权限组
 
-当 `FEISHU_ENABLED=true` 时，系统管理员可在“管理后台 - 权限组”执行“同步飞书部门”。系统从根部门 `department_id=0` 分页递归读取所有可见子部门；注意 `0` 是飞书的原始 `department_id`，不是 `open_department_id`，根部门自身不会被创建为权限组。随后系统以每批 50 个 `open_department_id` 调用 `GET /open-apis/contact/v3/departments/batch` 读取名称、父部门、负责人和成员数等部门详情。每个飞书子部门都会成为只读权限组；飞书用户登录或绑定飞书身份后，系统会读取其 `open_department_id` 并更新飞书来源的权限组成员关系。手工分配的权限组不会被此同步删除。
+当 `FEISHU_ENABLED=true` 时，系统管理员可在“管理后台 - 权限组”执行“同步飞书部门”。系统通过 `GET /open-apis/contact/v3/departments/0/children` 从根节点分页递归读取所有可见子部门；`0` 是飞书接口规定的根节点特殊值，请求的 `department_id_type` 仍固定为 `open_department_id`，根部门自身不会被创建为权限组。随后系统以每批 50 个 `open_department_id` 调用 `GET /open-apis/contact/v3/departments/batch` 读取名称、父部门、负责人和成员数等部门详情。列表去重、详情查询、父部门关系、权限组映射和用户所属部门同步均只使用全局唯一的 `open_department_id`。每个飞书子部门都会成为只读权限组；手工分配的权限组不会被此同步删除。
 
-当前实现使用应用 `tenant_access_token`，因此飞书应用必须申请并发布通讯录读取权限，至少包括读取部门和用户基础信息/所属部门所需的 `contact:department:readonly`、`contact:contact.base:readonly` 权限，并将应用的通讯录可见范围覆盖目标部门。要同步根部门或整个组织，应将可见范围设为“全部成员”；否则批量接口只会返回应用可见范围内的部门。飞书管理员的 `user_access_token` 按平台规则默认满足部门可见性，但本系统不保存管理员个人令牌，也不会使用它进行后台同步。若通讯录接口无权限或临时不可用，飞书基础登录仍可成功，但本次不会变更部门权限组；管理员同步按钮会返回具体接口错误。
+飞书免登时，服务端会用用户的 `open_id` 调用 `GET /open-apis/contact/v3/users/:user_id`，并显式传入 `user_id_type=open_id`、`department_id_type=open_department_id`。响应中的 `department_ids` 是该用户直接所属的一个或多个部门，系统会先确认字段存在且所有值都是 `od-` 开头的 `open_department_id`，解析全部权限组后再开始刷新飞书来源的成员关系；字段缺失不会被误判为“用户没有部门”。首次飞书免登必须完成部门同步后才会创建站内会话。已有飞书身份的站内会话每次加载应用时会调用 `POST /api/auth/feishu/departments/sync`，根据已保存的 `open_id` 刷新部门关系并返回最新权限组，因此用户调岗后不需要退出再登录。若同步失败，系统会清除该用户旧的飞书部门关系，避免继续使用过期部门权限；手工分配和系统权限组不会被清除。
+
+当前部门同步使用应用 `tenant_access_token`。应用至少需要开通“获取通讯录基本信息”（`contact:contact.base:readonly`），并为用户详情的 `department_ids` 开通“获取用户组织架构信息”字段权限；部门名称和父部门关系还需要“获取部门基础信息”及“获取通讯录部门组织架构信息”字段权限。权限变更需要发布应用版本后才会生效。应用的通讯录权限范围必须包含登录用户及目标部门；要从根节点同步整个组织，数据权限范围应设置为“全部成员”，否则飞书会返回 `no user authority`、`no dept authority`，或只返回可见范围内的数据。
+
+网页应用的 `tt.requestAccess` 免登码仍按飞书官方网页应用示例使用 `app_access_token` 调用 `POST /open-apis/authen/v1/access_token` 换取用户凭证。通用浏览器 OAuth 已有更新版本，但其授权码流程与网页应用 JSAPI 免登码不是同一接入方式，不能直接替换。
 
 绑定入口：
 

@@ -56,17 +56,24 @@ export const useSessionStore = defineStore('session', {
     async autoLoginWithFeishu() {
       const feishu = this.providers?.feishu;
       if (!feishu?.enabled || !feishu.autoLogin || !feishu.appId || feishuAutoLoginAttempted) return;
-      if (this.viewer?.boundProviders.includes('feishu')) return;
       feishuAutoLoginAttempted = true;
+      const refreshingDepartments = Boolean(this.viewer?.boundProviders.includes('feishu'));
       try {
+        if (refreshingDepartments) {
+          this.viewer = await apiPost<Viewer>('/auth/feishu/departments/sync');
+          return;
+        }
         await loadFeishuSdk(feishu.sdkUrl);
         if (!await waitForFeishuSdkReady()) return;
         const code = await requestFeishuAuthCode(feishu.appId);
         if (code) this.viewer = await apiPost<Viewer>(this.viewer ? '/auth/feishu/bind-code' : '/auth/feishu/code', { code });
       } catch (error) {
+        if (refreshingDepartments) {
+          this.viewer = await apiGet<Viewer | null>('/me').catch(() => this.viewer);
+        }
         // The SDK is intentionally attempted after it has been loaded: some Feishu
         // WebViews expose their bridge only then and do not identify in the UA.
-        console.warn('飞书自动登录未完成', error);
+        console.warn(refreshingDepartments ? '飞书部门权限组刷新失败' : '飞书自动登录未完成', error);
       }
     },
     async logout() {

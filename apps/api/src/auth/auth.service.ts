@@ -220,6 +220,17 @@ export class AuthService {
     return this.getViewer(String(userId));
   }
 
+  async refreshFeishuDepartments(userId: string) {
+    const identity = await this.db.first(
+      `SELECT open_id FROM auth_identities WHERE user_id = :userId AND provider = 'feishu'`,
+      { userId }
+    );
+    const openId = String(identity?.open_id || '').trim();
+    if (!openId) throw new UnauthorizedException('当前账户缺少可用于同步部门的飞书 open_id');
+    await this.syncFeishuDepartments(userId, openId);
+    return this.getViewer(userId);
+  }
+
   private async feishuIdentity(code: string) {
     if (process.env.FEISHU_ENABLED !== 'true') throw new UnauthorizedException('飞书登录未启用');
     const appId = requiredEnv('FEISHU_APP_ID');
@@ -246,7 +257,9 @@ export class AuthService {
       headers: { Authorization: `Bearer ${userAccessToken}` }
     });
     const user = userResponse.data?.data;
-    const subject = user?.union_id || user?.open_id || user?.user_id;
+    const openId = String(user?.open_id || '').trim();
+    if (!openId) throw new UnauthorizedException('飞书用户信息缺少 open_id，无法同步部门权限组');
+    const subject = user?.union_id || openId;
     if (!subject) throw new UnauthorizedException('飞书用户信息缺少稳定 ID');
 
     this.assertAllowedFeishuTenant(user?.tenant_key);
@@ -259,7 +272,7 @@ export class AuthService {
       provider: 'feishu',
       providerSubject: String(subject),
       providerUserId: user.user_id || null,
-      openId: user.open_id || null,
+      openId,
       unionId: user.union_id || null,
       tenantKey: user.tenant_key || null,
       groups: ['member'],
@@ -446,12 +459,12 @@ export class AuthService {
   }
 
   private async syncFeishuDepartments(userId: string, openId: string | null) {
-    if (!openId) return;
+    if (!openId) throw new UnauthorizedException('飞书用户信息缺少 open_id，无法同步部门权限组');
     try {
       await this.feishuOrganization.syncUserDepartments(userId, openId);
     } catch (error) {
-      // Contact-directory authorization must not turn a successful Feishu login into a lockout.
-      console.warn('飞书部门同步失败', error instanceof Error ? error.message : error);
+      await this.feishuOrganization.clearUserDepartments(userId);
+      throw error;
     }
   }
 
