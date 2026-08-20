@@ -1,13 +1,13 @@
 <template>
   <div class="content-editor">
     <n-space class="editor-toolbar" :size="4" :wrap="true" align="center">
-      <n-radio-group v-model:value="mode" size="small" @update:value="changeMode">
+      <n-radio-group key="editor-mode" v-model:value="mode" size="small" @update:value="changeMode">
         <n-radio-button value="markdown">Markdown</n-radio-button>
         <n-radio-button value="rich">富文本</n-radio-button>
       </n-radio-group>
-      <n-divider vertical />
-      <template v-if="mode === 'rich'">
-        <n-tooltip v-for="tool in richTools" :key="tool.label" trigger="hover"><template #trigger><n-button quaternary circle size="small" :aria-label="tool.label" @mousedown.prevent @click="runCommand(tool.command)"><template #icon><n-icon><component :is="tool.icon" /></n-icon></template></n-button></template>{{ tool.label }}</n-tooltip>
+      <n-space v-if="mode === 'rich'" key="rich-tools" :size="4" align="center" :wrap="true">
+        <n-divider vertical />
+        <n-tooltip v-for="tool in richTools" :key="tool.command" trigger="hover"><template #trigger><n-button quaternary circle size="small" :aria-label="tool.label" @mousedown.prevent @click="runCommand(tool.command)"><template #icon><n-icon><component :is="tool.icon" /></n-icon></template></n-button></template>{{ tool.label }}</n-tooltip>
         <n-dropdown trigger="click" :options="blockOptions" @select="applyBlock">
           <n-tooltip trigger="hover"><template #trigger><n-button quaternary circle size="small" aria-label="段落样式" @mousedown.prevent><template #icon><n-icon><TextOutline /></n-icon></template></n-button></template>段落样式</n-tooltip>
         </n-dropdown>
@@ -23,8 +23,8 @@
           <template #trigger><n-tooltip trigger="hover"><template #trigger><n-button quaternary circle size="small" aria-label="插入图片"><template #icon><n-icon><ImageOutline /></n-icon></template></n-button></template>插入图片</n-tooltip></template>
           <n-space vertical :size="8" style="width: 280px"><n-button type="primary" :loading="imageUploading" @mousedown.prevent @click="openImageUpload"><template #icon><n-icon><CloudUploadOutline /></n-icon></template>上传图片</n-button><n-text depth="3">支持 JPEG、PNG、GIF、WebP，最大 5MB。</n-text><n-divider>或使用图片链接</n-divider><n-input v-model:value="imageUrl" placeholder="图片 URL，例如 https://..." /><n-button size="small" :disabled="!imageUrl.trim()" @click="insertImage">插入链接图片</n-button><input ref="imageInputRef" class="image-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadImage" /></n-space>
         </n-popover>
-      </template>
-      <n-button quaternary size="small" @click="togglePreview"><template #icon><n-icon><EyeOutline /></n-icon></template>{{ preview ? '编辑' : '预览' }}</n-button>
+      </n-space>
+      <n-button key="editor-preview" quaternary size="small" @click="togglePreview"><template #icon><n-icon><EyeOutline /></n-icon></template>{{ preview ? '编辑' : '预览' }}</n-button>
     </n-space>
 
     <n-collapse-transition :show="!preview">
