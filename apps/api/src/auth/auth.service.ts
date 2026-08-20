@@ -143,7 +143,7 @@ export class AuthService {
     const tokenUrl = process.env.NYK_OAUTH_TOKEN_URL || 'https://account.naids.com/api/oauth2/token';
     const userInfoUrl = process.env.NYK_OAUTH_USERINFO_URL || 'https://account.naids.com/api/api/user/data';
 
-    const hashedSecret = await bcrypt.hash(clientSecret, 10);
+    const hashedSecret = await natayarkPasswordHash(clientSecret);
     let tokenResponse;
     try {
       // NatayarkID's token endpoint parses form data, while its redirect URI
@@ -443,7 +443,10 @@ export class AuthService {
 
   private throwNatayarkIdRequestError(operation: string, error: unknown): never {
     if (axios.isAxiosError(error) && error.response?.status && error.response.status < 500) {
-      throw new UnauthorizedException(`NatayarkID ${operation}失败，授权已失效或配置不匹配，请重新发起登录`);
+      const detail = natayarkErrorDetail(error.response.data);
+      throw new UnauthorizedException(
+        `NatayarkID ${operation}失败${detail ? `：${detail}` : '，授权已失效或配置不匹配，请重新发起登录'}`
+      );
     }
     throw new UnauthorizedException(`NatayarkID ${operation}服务暂时不可用，请稍后重试`);
   }
@@ -457,6 +460,23 @@ export class AuthService {
       throw new UnauthorizedException('飞书组织不在允许范围内');
     }
   }
+}
+
+async function natayarkPasswordHash(secret: string) {
+  const hash = await bcrypt.hash(secret, 10);
+  // bcryptjs emits $2a$, while Natayark requires the PHP PASSWORD_HASH
+  // identifier $2y$. The digest and salt remain unchanged.
+  if (!/^\$2[ab]\$/.test(hash)) throw new Error('无法生成兼容的 NatayarkID bcrypt 密文');
+  return `$2y$${hash.slice(4)}`;
+}
+
+function natayarkErrorDetail(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return typeof payload === 'string' ? payload.slice(0, 240) : null;
+  const data = payload as Record<string, unknown>;
+  for (const key of ['error_description', 'message', 'error']) {
+    if (typeof data[key] === 'string' && data[key].trim()) return data[key].trim().slice(0, 240);
+  }
+  return null;
 }
 
 function feishuWebSdkUrl() {
