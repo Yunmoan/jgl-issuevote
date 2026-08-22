@@ -106,6 +106,27 @@ test('new issue times cannot be earlier than the current time', () => {
   assert.equal(createIssueSchema.safeParse({ ...base, commentEndsAt: future }).success, true);
 });
 
+test('quorum count accepts zero as no minimum voter requirement', () => {
+  const base = { title: '基准人数校验', bodyMd: '测试正文', votingEnabled: true };
+  assert.equal(createIssueSchema.safeParse({ ...base, quorumCount: 0 }).success, true);
+  assert.equal(createIssueSchema.parse({ ...base, quorumCount: 0 }).quorumCount, null);
+  assert.equal(createIssueSchema.safeParse({ ...base, quorumCount: 3 }).success, true);
+});
+
+test('quorum count blocks a result until enough users have voted', async () => {
+  const service = new IssuesService({} as never, {} as never);
+  const outcomeForIssue = (service as unknown as {
+    outcomeForIssue: (issueId: string, votingEnabled: boolean, quorumCount: number | null, passRule: string, executor: { rows: () => Promise<Array<{ choice: string; count: number }>> }) => Promise<string>;
+  }).outcomeForIssue.bind(service);
+  const executor = { rows: async () => [{ choice: 'agree', count: 2 }, { choice: 'abstain', count: 1 }] };
+
+  assert.equal(await outcomeForIssue('12', true, 4, 'simple_majority', executor), 'rejected');
+  assert.equal(await outcomeForIssue('12', true, 3, 'simple_majority', executor), 'passed');
+  assert.equal(await outcomeForIssue('12', true, 0, 'simple_majority', executor), 'passed');
+  assert.equal(await outcomeForIssue('12', true, 4, 'custom', executor), 'rejected');
+  assert.equal(await outcomeForIssue('12', true, 3, 'custom', executor), 'manual_required');
+});
+
 test('submitting the same vote is idempotent and does not consume a change', async () => {
   let transactionCount = 0;
   let writeCount = 0;

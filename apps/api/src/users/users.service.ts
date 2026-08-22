@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { DatabaseService } from '../db/database.service';
 import { nowSql } from '../db/sql-time';
 import type { Viewer } from '../types';
+import { cycleSchedule } from '../issues/cycle-schedule';
 
 @Injectable()
 export class UsersService {
@@ -183,7 +184,8 @@ export class UsersService {
       footerText: typeof values.footer_text === 'string' && values.footer_text.trim() ? values.footer_text.trim() : `版权所有 © ${new Date().getFullYear()} ${siteName}`,
       watermarkMode: ['off', 'global', 'issue'].includes(String(values.watermark_mode)) ? values.watermark_mode : 'off',
       issueReviewMode: reviewMode(values.ai_review_config),
-      timePresets: normalizedTimePresets(values.issue_time_presets)
+      timePresets: normalizedTimePresets(values.issue_time_presets),
+      currentCycle: cycleDisplay(cycleSchedule(new Date()))
     };
   }
 
@@ -228,6 +230,14 @@ export class UsersService {
       { actorId, action, targetType, targetId, metadata: JSON.stringify(metadata), now: nowSql() }
     );
   }
+}
+
+function cycleDisplay(schedule: ReturnType<typeof cycleSchedule>) {
+  const format = (value: string) => {
+    const date = new Date(value);
+    return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
+  };
+  return { weekLabel: schedule.weekLabel, startAt: schedule.startAt, endAt: schedule.endAt, label: `${schedule.weekLabel} ${format(schedule.startAt)}~${format(schedule.endAt)}` };
 }
 
 function safeJson(value: string | null) {

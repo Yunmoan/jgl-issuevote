@@ -36,13 +36,22 @@ export class DatabaseService implements DatabaseExecutor, OnModuleDestroy {
       uri,
       connectionLimit: 10,
       namedPlaceholders: true,
-      timezone: 'Z'
+      timezone: 'Z',
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
     });
   }
 
   async rows<T extends RowDataPacket = RowDataPacket>(sql: string, params: Record<string, unknown> = {}): Promise<T[]> {
-    const [rows] = await this.pool.query<T[]>(sql, params as any);
-    return rows;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const [rows] = await this.pool.query<T[]>(sql, params as any);
+        return rows;
+      } catch (error) {
+        if (!isTransientReadConnectionError(error) || attempt >= 2) throw error;
+        await delay(150 * (attempt + 1));
+      }
+    }
   }
 
   async first<T extends RowDataPacket = RowDataPacket>(sql: string, params: Record<string, unknown> = {}): Promise<T | null> {
@@ -73,4 +82,13 @@ export class DatabaseService implements DatabaseExecutor, OnModuleDestroy {
   async onModuleDestroy() {
     await this.pool.end();
   }
+}
+
+function isTransientReadConnectionError(error: unknown) {
+  const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code) : '';
+  return ['ECONNRESET', 'ETIMEDOUT', 'PROTOCOL_CONNECTION_LOST'].includes(code);
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }

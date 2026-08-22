@@ -208,10 +208,11 @@ export class IssuesController {
   private async castVote(number: string, body: unknown, req: Request) {
     const viewer = await this.auth.requireDataViewer(req);
     const parsed = z.object({
-      choice: z.enum(['agree', 'disagree', 'abstain']),
+      choice: z.enum(['agree', 'disagree', 'abstain']).optional(),
+      candidateIds: z.array(z.coerce.number().int().positive()).max(100).optional(),
       reason: z.string().max(300).optional()
-    }).parse(body);
-    return { data: await this.issues.vote(number, parsed.choice as VoteChoice, parsed.reason, viewer) };
+    }).refine((value) => value.choice || (value.candidateIds && value.candidateIds.length > 0), '请选择投票内容').parse(body);
+    return { data: await this.issues.vote(number, parsed.choice as VoteChoice | undefined || null, parsed.reason, viewer, parsed.candidateIds || []) };
   }
 }
 

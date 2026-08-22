@@ -166,6 +166,8 @@ AI 模式下，创建页面第 1 步调用 `POST /api/issues/ai-review`：
 }
 ```
 
+`quorumCount` 是可选的投票基准人数。未填写、`null` 或 `0` 表示不设置基准人数；设置为正整数时，当前投票人数（包括弃权）未达到该人数，议题关闭后的结果为未通过，达到后才按 `passRule` 计算同意与不同意票。
+
 未配置投票时间时，议题先处于 `open`（开放讨论），创建者可通过 `POST /api/issues/:number/start-voting` 开始投票。手动结束和计划结束统一转为 `vote_ended`，保留讨论但不再接受新投票；即使服务错过了整个计划窗口，恢复后也会补偿进入 `vote_ended`。`POST /api/issues/:number/close` 才会停止讨论和投票。意见统一公布时间必须晚于意见截止时间，投票结束时间必须至少晚于意见统一公布时间 3 分钟；未设置统一公布时间时，自动投票至少持续 3 分钟。新建议题中的所有业务时间均不得早于当前时间。关闭接口接收 `{ "visibility": "retain" | "public" | "admin_only" }`，用于保持现状、公开给所有访客，或对除管理员外的所有人隐藏。自定义规则结束后返回 `outcome=manual_required`，仅 `admin` 或 `auditor` 可通过 `POST /api/issues/:number/outcome` 提交 `{ "outcome": "passed" | "rejected" }`。
 
 议题详情返回应包含当前用户能力：
