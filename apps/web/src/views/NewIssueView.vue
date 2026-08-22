@@ -20,11 +20,15 @@
         <n-form-item label="议题标题" path="title"><n-input v-model:value="form.title" maxlength="200" show-count
             @blur="normalizeTitle"
             placeholder="用一句话概括需要表决的事项" /></n-form-item>
-        <n-form-item label="议题类型" path="issueType"><n-radio-group v-model:value="form.issueType">
-          <n-space :size="16" :wrap="true"><n-radio value="cycle">周期议题</n-radio><n-radio value="election">选举议题</n-radio><n-radio value="custom">自定义议题</n-radio></n-space>
-        </n-radio-group></n-form-item>
-        <n-alert v-if="form.issueType === 'cycle'" type="info" :bordered="false" class="cycle-summary">当前议题创建后将归入：{{ currentCycle?.label || '正在计算当前周期...' }}。前 12 天收集意见，第 13-14 天固定投票。
-        </n-alert>
+        <n-form-item label="议题类型" path="issueType">
+          <n-space vertical :size="12" class="issue-type-content">
+            <n-radio-group v-model:value="form.issueType">
+              <n-space :size="16" :wrap="true"><n-radio value="cycle">周期议题</n-radio><n-radio value="election">选举议题</n-radio><n-radio value="custom">自定义议题</n-radio></n-space>
+            </n-radio-group>
+            <n-alert v-if="form.issueType === 'cycle'" type="info" :bordered="false" class="cycle-summary">当前议题创建后将归入：{{ currentCycle?.label || '正在计算当前周期...' }}。前 12 天收集意见，第 13-14 天固定投票。
+            </n-alert>
+          </n-space>
+        </n-form-item>
         <n-form-item label="议题说明" path="bodyMd">
           <ContentEditor v-model="form.bodyMd" :min-rows="9"
             placeholder="说明背景、可选方案、执行影响或需要讨论的重点。支持 Markdown、图片与基本富文本。" />
@@ -34,9 +38,9 @@
         <n-alert v-if="aiReview" :type="aiReview.approved ? 'success' : 'error'" :bordered="false"
           :title="aiReview.approved ? 'AI 预审通过' : 'AI 预审未通过'">
           <n-space vertical :size="8"><span>{{ aiReview.summary }}</span><n-text>法律法规检查：{{ aiReview.legal.passed ? '通过'
-              : '未通过' }}，{{ aiReview.legal.reason }}</n-text><n-text>自定义条件检查：{{ aiReview.policy.passed ? '通过' : '未通过'
+            : '未通过' }}，{{ aiReview.legal.reason }}</n-text><n-text>自定义条件检查：{{ aiReview.policy.passed ? '通过' : '未通过'
               }}，{{ aiReview.policy.reason }}</n-text><n-text v-for="risk in aiReview.risks" :key="risk" depth="3">{{
-              risk }}</n-text><n-space v-if="aiReview.similarIssues.length" vertical :size="4"><n-text
+                risk }}</n-text><n-space v-if="aiReview.similarIssues.length" vertical :size="4"><n-text
                 strong>可能相似的已存在议题</n-text><n-button v-for="issue in aiReview.similarIssues" :key="issue.number" text
                 type="primary" @click="router.push(`/issues/${issue.number}`)">#{{ issue.number }} {{ issue.title
                 }}</n-button></n-space></n-space>
@@ -56,27 +60,38 @@
                 :options="groupOptions" :loading="loadingOptions"
                 :disabled="form.visibility !== 'groups' || !formOptionsReady"
                 placeholder="仅在“权限组可见”时生效" /></n-form-item></n-gi>
-          <n-gi span="2 720:1"><n-form-item :label="form.issueType === 'election' ? '选举范围' : '投票权限组'"><n-radio-group v-if="form.issueType === 'election'" v-model:value="form.electionScope"><n-space :wrap="true"><n-radio value="all">全体选举（所有登录成员）</n-radio><n-radio value="department">部门选举</n-radio></n-space></n-radio-group><n-select v-else v-model:value="form.voteGroupKeys" multiple
+          <n-gi span="2 720:1"><n-form-item :label="form.issueType === 'election' ? '选举范围' : '投票权限组'"><n-radio-group
+                v-if="form.issueType === 'election'" v-model:value="form.electionScope"><n-space><n-radio
+                    value="all">全体选举（所有登录成员）</n-radio><n-radio
+                    value="department">部门选举</n-radio></n-space></n-radio-group><n-select v-else
+                v-model:value="form.voteGroupKeys" multiple :options="groupOptions" :loading="loadingOptions"
+                :disabled="!formOptionsReady" placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
+          <n-gi v-if="form.issueType === 'election' && form.electionScope === 'department'" span="2 720:1"><n-form-item
+              label="指定投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :max-tag-count="1"
                 :options="groupOptions" :loading="loadingOptions" :disabled="!formOptionsReady"
-                placeholder="留空则所有可见用户可投票" /></n-form-item></n-gi>
-          <n-gi v-if="form.issueType === 'election' && form.electionScope === 'department'" span="2 720:1"><n-form-item label="指定投票权限组"><n-select v-model:value="form.voteGroupKeys" multiple :max-tag-count="1" :options="groupOptions" :loading="loadingOptions" :disabled="!formOptionsReady" placeholder="选择一个部门权限组" /></n-form-item></n-gi>
-          <n-gi v-if="form.issueType === 'cycle'" span="2"><n-form-item label="议题时间"><n-alert type="info" :bordered="false">周期议题固定按当前两周周期执行：前 12 天收集意见，第 13-14 天投票，意见在投票开始时统一公布。</n-alert></n-form-item></n-gi>
-          <n-gi v-else span="2"><n-form-item label="议题时间"><n-radio-group v-model:value="commentTimeMode"><n-space :size="12"
-                  :wrap="true"><n-radio value="short">短周期（{{ timePresets.discussionShortDays }} 天）</n-radio><n-radio
-                    value="long">长周期（{{ timePresets.discussionLongDays }} 天）</n-radio><n-radio
+                placeholder="选择一个部门权限组" /></n-form-item></n-gi>
+          <n-gi v-if="form.issueType === 'cycle'" span="2"><n-alert type="info" :bordered="false">当前议题创建后将归入：{{
+            currentCycle?.label || '正在计算当前周期...' }}。周期前 12 天收集意见，第 13-14 天为本周期固定投票时间。
+            </n-alert>
+          </n-gi>
+          <n-gi v-else span="2"><n-form-item label="议题时间"><n-radio-group v-model:value="commentTimeMode"><n-space
+                  :size="12" :wrap="true"><n-radio value="short">短周期（{{ timePresets.discussionShortDays }}
+                    天）</n-radio><n-radio value="long">长周期（{{ timePresets.discussionLongDays }} 天）</n-radio><n-radio
                     value="days">手动输入天数</n-radio><n-radio
                     value="specific">手动设定时间</n-radio></n-space></n-radio-group></n-form-item></n-gi>
-          <n-gi v-if="form.issueType !== 'cycle' && commentTimeMode === 'days'" span="2 720:1"><n-form-item label="征集天数"><n-input-number
-                v-model:value="commentDurationDays" :min="1" :max="365" style="width: 100%"><template
-                  #suffix>天</template></n-input-number></n-form-item></n-gi>
-          <n-gi v-if="form.issueType !== 'cycle' && commentTimeMode === 'specific'" span="2 720:1"><n-form-item label="意见截止时间"><n-date-picker
-                v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%"
+          <n-gi v-if="form.issueType !== 'cycle' && commentTimeMode === 'days'" span="2 720:1"><n-form-item
+              label="征集天数"><n-input-number v-model:value="commentDurationDays" :min="1" :max="365"
+                style="width: 100%"><template #suffix>天</template></n-input-number></n-form-item></n-gi>
+          <n-gi v-if="form.issueType !== 'cycle' && commentTimeMode === 'specific'" span="2 720:1"><n-form-item
+              label="意见截止时间"><n-date-picker v-model:value="commentEndsAt" type="datetime" clearable style="width: 100%"
                 :is-date-disabled="disableCommentEndDate" /></n-form-item></n-gi>
-          <n-gi v-else-if="form.issueType !== 'cycle'" span="2 720:1"><n-form-item label="意见截止时间"><n-text>{{ commentEndsAt ? formatTime(commentEndsAt) :
+          <n-gi v-else-if="form.issueType !== 'cycle'" span="2 720:1"><n-form-item label="意见截止时间"><n-text>{{
+            commentEndsAt ?
+              formatTime(commentEndsAt) :
                 '未设置'
                 }}</n-text></n-form-item></n-gi>
-          <n-gi v-if="form.issueType !== 'cycle'" span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker v-model:value="commentPublishAt"
-                type="datetime" clearable style="width: 100%"
+          <n-gi v-if="form.issueType !== 'cycle'" span="2 720:1"><n-form-item label="意见统一公布时间"><n-date-picker
+                v-model:value="commentPublishAt" type="datetime" clearable style="width: 100%"
                 :is-date-disabled="disableCommentPublishDate" /></n-form-item></n-gi>
           <n-gi span="2 720:1"><n-form-item label="每人最多发表意见次数"><n-input-number v-model:value="form.maxCommentsPerUser"
                 :min="1" :max="100" style="width: 100%"><template
@@ -93,26 +108,40 @@
         </n-space>
         <template v-if="form.votingEnabled">
           <n-card v-if="form.issueType === 'election'" size="small" embedded title="候选人列表">
-            <n-alert v-if="candidateValidationAttempted && electionCandidateError" type="error" :bordered="false" class="candidate-error">{{ electionCandidateError }}</n-alert>
-            <n-space vertical :size="10"><n-space v-for="(candidate, index) in form.electionCandidates" :key="index" align="start" class="candidate-row">
-              <n-input v-model:value="candidate.nickname" placeholder="昵称（必填）" :status="candidateValidationAttempted && !candidate.nickname.trim() ? 'error' : undefined" class="candidate-nickname" />
-              <n-input v-model:value="candidate.remark" placeholder="备注（必填）" :status="candidateValidationAttempted && !candidate.remark.trim() ? 'error' : undefined" class="candidate-remark" />
-              <n-button tertiary type="error" :disabled="form.electionCandidates.length <= 2" @click="removeCandidate(index)">删除</n-button>
-            </n-space><n-button dashed @click="addCandidate">添加候选人</n-button></n-space>
+            <n-space vertical :size="10"><n-space v-for="(candidate, index) in form.electionCandidates" :key="index"
+                align="start">
+                <n-input v-model:value="candidate.nickname" placeholder="昵称" style="width: 180px" />
+                <n-input v-model:value="candidate.remark" placeholder="备注" style="min-width: 240px" />
+                <n-button tertiary type="error" :disabled="form.electionCandidates.length <= 2"
+                  @click="removeCandidate(index)">删除</n-button>
+              </n-space><n-button dashed @click="addCandidate">添加候选人</n-button></n-space>
           </n-card>
           <n-grid :cols="2" :x-gap="20" :y-gap="4" responsive="screen" item-responsive>
             <template v-if="form.issueType === 'election'">
-              <n-gi span="2"><n-form-item label="投票开始"><n-radio-group v-model:value="form.electionStartMode"><n-space><n-radio value="manual">手动开始</n-radio><n-radio value="scheduled">按时间开始</n-radio></n-space></n-radio-group></n-form-item></n-gi>
-              <n-gi v-if="form.electionStartMode === 'scheduled'" span="2 720:1"><n-form-item label="开始时间"><n-date-picker v-model:value="voteStartsAt" type="datetime" style="width: 100%" :is-date-disabled="disableFutureDate" /></n-form-item></n-gi>
-              <n-gi span="2 720:1"><n-form-item label="投票时长"><n-radio-group v-model:value="form.electionDurationPreset"><n-space><n-radio value="instant">即时（10 分钟）</n-radio><n-radio value="day">一天（24 小时）</n-radio></n-space></n-radio-group></n-form-item></n-gi>
-              <n-gi span="2 720:1"><n-form-item label="每人最多投票数"><n-input-number v-model:value="form.electionMaxVotes" :min="1" :max="100" style="width: 100%"><template #suffix>人</template></n-input-number></n-form-item></n-gi>
-              <n-gi span="2 720:1"><n-form-item label="选出人数"><n-input-number v-model:value="form.electionWinnerCount" :min="1" :max="100" style="width: 100%"><template #suffix>人</template></n-input-number></n-form-item></n-gi>
-              <n-gi span="2 720:1"><n-form-item label="结果有效基准人数"><div class="quorum-field"><n-input-number v-model:value="form.electionQuorumCount" :min="1" :max="100000" clearable style="width: 100%"><template #suffix>人</template></n-input-number><n-text depth="3" class="quorum-hint">留空时按超过符合范围成员的 80% 计算；达到有效基准人数时自动结束。</n-text></div></n-form-item></n-gi>
+              <n-gi span="2"><n-form-item label="投票开始"><n-radio-group
+                    v-model:value="form.electionStartMode"><n-space><n-radio value="manual">手动开始</n-radio><n-radio
+                        value="scheduled">按时间开始</n-radio></n-space></n-radio-group></n-form-item></n-gi>
+              <n-gi v-if="form.electionStartMode === 'scheduled'" span="2 720:1"><n-form-item
+                  label="开始时间"><n-date-picker v-model:value="voteStartsAt" type="datetime" style="width: 100%"
+                    :is-date-disabled="disableFutureDate" /></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="投票时长"><n-radio-group
+                    v-model:value="form.electionDurationPreset"><n-space><n-radio value="instant">即时（10
+                        分钟）</n-radio><n-radio value="day">一天（24
+                        小时）</n-radio></n-space></n-radio-group></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="每人最多投票数"><n-input-number v-model:value="form.electionMaxVotes"
+                    :min="1" :max="100" style="width: 100%"><template
+                      #suffix>人</template></n-input-number></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="选出人数"><n-input-number v-model:value="form.electionWinnerCount"
+                    :min="1" :max="100" style="width: 100%"><template
+                      #suffix>人</template></n-input-number></n-form-item></n-gi>
+              <n-gi span="2 720:1"><n-form-item label="结果有效基准"><n-text>超过 {{ form.electionQuorumPercent }}%
+                    的符合范围成员投票后结果有效；达到符合范围人数时自动结束。</n-text></n-form-item></n-gi>
             </template>
-            <n-gi v-else-if="form.issueType === 'cycle'" span="2"><n-form-item label="投票时间"><n-alert type="info" :bordered="false">投票时间固定，不可自定义：{{ currentCycle?.label || '当前两周周期' }}的第 13-14 天，投票时长固定为两天。
-              </n-alert></n-form-item></n-gi>
-            <n-gi v-else span="2"><n-form-item label="投票时间"><n-radio-group v-model:value="voteTimeMode"><n-space :size="12"
-                    :wrap="true"><n-radio value="manual">手动开启</n-radio><n-radio value="instant">即时投票（{{
+            <n-gi v-else-if="form.issueType === 'cycle'" span="2"><n-form-item label="投票时间"><n-alert type="info"
+                  :bordered="false">投票时间固定，不可自定义：前半月为第 13-14 日，后半月为当月最后两天，投票时长固定为两天。
+                </n-alert></n-form-item></n-gi>
+            <n-gi v-else span="2"><n-form-item label="投票时间"><n-radio-group v-model:value="voteTimeMode"><n-space
+                    :size="12" :wrap="true"><n-radio value="manual">手动开启</n-radio><n-radio value="instant">即时投票（{{
                       timePresets.voteInstantMinutes }} 分钟）</n-radio><n-radio value="short">短周期投票（{{
                         timePresets.voteShortMinutes }} 分钟）</n-radio><n-radio value="long">长周期投票（{{
                         timePresets.voteLongMinutes }} 分钟）</n-radio><n-radio value="minutes">手动输入分钟</n-radio><n-radio
@@ -138,8 +167,8 @@
                 label="投票计划"><n-text>由创建者在议题页手动开始，并在确认时设置投票时长。</n-text></n-form-item></n-gi>
             <n-gi span="2 720:1"><n-form-item label="结果可见性"><n-select v-model:value="form.voteVisibility"
                   :options="voteVisibilityOptions" /></n-form-item></n-gi>
-            <n-gi v-if="form.issueType !== 'election'" span="2 720:1"><n-form-item label="通过规则"><n-select v-model:value="form.passRule"
-                  :options="passRuleOptions" /></n-form-item></n-gi>
+            <n-gi v-if="form.issueType !== 'election'" span="2 720:1"><n-form-item label="通过规则"><n-select
+                  v-model:value="form.passRule" :options="passRuleOptions" /></n-form-item></n-gi>
             <n-gi v-if="form.issueType !== 'election'" span="2">
               <div class="vote-rule-pair"><n-form-item label="基准人数（可选）" :show-feedback="false">
                   <div class="quorum-field"><n-input-number v-model:value="form.quorumCount" :min="0"
@@ -147,16 +176,18 @@
                       class="quorum-hint">达到此人数后才按通过规则计算；留空或填 0
                       不设门槛，弃权也计入人数。</n-text></div>
                 </n-form-item>
-                <n-form-item label="每人最多重投次数"><div class="quorum-field"><n-input-number v-model:value="form.maxVoteChanges" :min="0"
-                    :max="100" :disabled="!form.allowVoteChange" style="width: 100%"><template
-                      #suffix>次</template></n-input-number><n-text depth="3"
-                      class="quorum-hint"><n-checkbox
-              v-model:checked="form.allowVoteChange">投票结束前允许重新投票</n-checkbox></n-text></div></n-form-item>
-                    </div>
+                <n-form-item label="每人最多重投次数">
+                  <div class="quorum-field"><n-input-number v-model:value="form.maxVoteChanges" :min="0" :max="100"
+                      :disabled="!form.allowVoteChange" style="width: 100%"><template
+                        #suffix>次</template></n-input-number><n-text depth="3" class="quorum-hint"><n-checkbox
+                        v-model:checked="form.allowVoteChange">投票结束前允许重新投票</n-checkbox></n-text></div>
+                </n-form-item>
+              </div>
             </n-gi>
-            <n-gi v-if="form.issueType !== 'election' && form.passRule === 'custom'" span="2"><n-form-item label="自定义通过规则"><n-input
-                  v-model:value="form.customPassRule" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"
-                  maxlength="500" show-count placeholder="例如：需到会成员三分之二同意，且预算不超过既定额度。" /></n-form-item></n-gi>
+            <n-gi v-if="form.issueType !== 'election' && form.passRule === 'custom'" span="2"><n-form-item
+                label="自定义通过规则"><n-input v-model:value="form.customPassRule" type="textarea"
+                  :autosize="{ minRows: 2, maxRows: 5 }" maxlength="500" show-count
+                  placeholder="例如：需到会成员三分之二同意，且预算不超过既定额度。" /></n-form-item></n-gi>
           </n-grid>
           <n-space v-if="form.issueType === 'custom'" vertical :size="10"><n-text
               depth="3">不设置自动时间时，由创建者在详情页开始或结束投票；设置时间时将自动开始和结束，仍可提前手动结束。</n-text></n-space>
@@ -232,13 +263,7 @@ const voteStartDelayMinutes = ref(0);
 const voteDurationMinutes = ref(10);
 const timePresets = ref({ discussionShortDays: 3, discussionLongDays: 5, voteInstantMinutes: 10, voteShortMinutes: 60, voteLongMinutes: 1440 });
 const currentCycle = ref<{ weekLabel: string; startAt: string; endAt: string; label: string } | null>(null);
-const form = reactive({ title: '议案：', bodyMd: '', issueType: 'cycle', electionScope: 'all' as 'all' | 'department', electionMaxVotes: 1 as number | null, electionWinnerCount: 1 as number | null, electionQuorumPercent: 80, electionQuorumCount: null as number | null, electionDurationPreset: 'day' as 'instant' | 'day', electionStartMode: 'manual' as 'scheduled' | 'manual', electionCandidates: [{ nickname: '', remark: '' }, { nickname: '', remark: '' }], visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], commentAnonymous: false, votingEnabled: true, voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, quorumCount: null as number | null, passRule: 'simple_majority', customPassRule: '' });
-const candidateValidationAttempted = ref(false);
-const electionCandidateError = computed(() => {
-  if (form.issueType !== 'election') return '';
-  const invalidIndex = form.electionCandidates.findIndex((candidate) => !candidate.nickname.trim() || !candidate.remark.trim());
-  return invalidIndex === -1 ? '' : '请完整填写第 ' + (invalidIndex + 1) + ' 名候选人的昵称和备注';
-});
+const form = reactive({ title: '议案：', bodyMd: '', issueType: 'cycle', electionScope: 'all' as 'all' | 'department', electionMaxVotes: 1 as number | null, electionWinnerCount: 1 as number | null, electionQuorumPercent: 80, electionDurationPreset: 'day' as 'instant' | 'day', electionStartMode: 'manual' as 'scheduled' | 'manual', electionCandidates: [{ nickname: '', remark: '' }, { nickname: '', remark: '' }], visibility: 'login', viewGroupKeys: [] as string[], voteGroupKeys: ['council'] as string[], labelIds: [] as number[], commentAnonymous: false, votingEnabled: true, voteVisibility: 'counts_after_close', allowVoteChange: true, maxVoteChanges: 1, maxCommentsPerUser: 3, quorumCount: null as number | null, passRule: 'simple_majority', customPassRule: '' });
 const rules: FormRules = { title: [{ required: true, min: 3, message: '议题标题至少需要 3 个字符', trigger: ['input', 'blur'] }], issueType: [{ required: true, message: '请选择议题类型', trigger: ['change', 'blur'] }], bodyMd: [{ required: true, message: '请填写议题说明', trigger: ['input', 'blur'] }] };
 const visibilityOptions = [{ label: '公开可见', value: 'public' }, { label: '登录可见', value: 'login' }, { label: '指定权限组可见', value: 'groups' }];
 const voteVisibilityOptions = [{ label: '投票结束后公布统计', value: 'counts_after_close' }, { label: '投票后即时公布统计', value: 'counts_after_vote' }, { label: '投票结束后公布姓名与统计', value: 'names_after_close' }, { label: '仅管理员可见', value: 'admin_only' }];
@@ -247,11 +272,6 @@ const manualReviewRequired = computed(() => issueReviewMode.value === 'manual' &
 
 async function nextStep() {
   if (currentStep.value === 1) {
-    normalizeTitle();
-    if (['cycle', 'election'].includes(form.issueType) && form.title.trim().length <= 3) {
-      message.error('请在标题前缀后填写议题标题');
-      return;
-    }
     await formRef.value?.validate();
     if (issueReviewMode.value === 'ai' && !await runAiReview()) return;
   }
@@ -281,19 +301,7 @@ function continueAfterSimilarIssues() {
 }
 
 async function submit() {
-  normalizeTitle();
-  if (form.issueType === 'election') {
-    candidateValidationAttempted.value = true;
-    if (electionCandidateError.value) {
-      message.error(electionCandidateError.value);
-      return;
-    }
-  }
   await formRef.value?.validate();
-  if (['cycle', 'election'].includes(form.issueType) && form.title.trim().length <= 3) {
-    message.error('请在标题前缀后填写议题标题');
-    return;
-  }
   if (form.votingEnabled && !['manual', 'specific'].includes(voteTimeMode.value)) applyVotePreset();
   if (!validateTimePlan()) return;
   if (!formOptionsReady.value) {
@@ -357,10 +365,10 @@ function normalizeNumericIds(ids: Array<number | string>) {
 }
 
 function normalizeTitle() {
-  const title = form.title.trim();
   if (form.issueType === 'custom') return;
-  const body = title.replace(/^(议案：|选举：)\s*/, '').trim();
-  form.title = `${form.issueType === 'cycle' ? '议案：' : '选举：'}${body}`.slice(0, 200);
+  const body = form.title.trim().replace(/^(议案：|选举：)\s*/, '').trim();
+  const prefix = form.issueType === 'cycle' ? '议案：' : '选举：';
+  form.title = `${prefix}${body}`.slice(0, 200);
 }
 
 function addCandidate() { form.electionCandidates.push({ nickname: '', remark: '' }); }
@@ -471,8 +479,7 @@ watch(() => form.issueType, (issueType) => {
   if (issueType === 'cycle') form.votingEnabled = true;
   if (issueType === 'custom') form.title = '';
   else normalizeTitle();
-  candidateValidationAttempted.value = false;
-});
+}, { immediate: true });
 
 watch(() => [form.issueType, form.electionScope, form.electionStartMode, form.electionDurationPreset, voteStartsAt.value], () => {
   if (form.issueType === 'election') {
@@ -512,33 +519,9 @@ watch(() => [form.title, form.bodyMd], () => {
   margin: 0;
 }
 
+.issue-type-content,
 .cycle-summary {
-  display: block;
-  flex: 0 0 100%;
   width: 100%;
-  margin: -8px 0 4px;
-}
-
-.candidate-row {
-  width: 100%;
-  flex-wrap: wrap;
-}
-
-.candidate-error {
-  margin-bottom: 12px;
-}
-
-.candidate-nickname,
-.candidate-remark {
-  min-width: 0;
-}
-
-.candidate-nickname {
-  flex: 1 1 180px;
-}
-
-.candidate-remark {
-  flex: 2 1 240px;
 }
 
 .form-footer {
@@ -573,12 +556,6 @@ watch(() => [form.title, form.bodyMd], () => {
 }
 
 @media (max-width: 480px) {
-  .candidate-nickname,
-  .candidate-remark {
-    flex-basis: 100%;
-    width: 100%;
-  }
-
   .form-footer :deep(.n-space) {
     width: 100%;
   }
