@@ -304,6 +304,7 @@ async function submit() {
   await formRef.value?.validate();
   if (form.votingEnabled && !['manual', 'specific'].includes(voteTimeMode.value)) applyVotePreset();
   if (!validateTimePlan()) return;
+  if (form.issueType === 'election' && !validateElectionCandidates()) return;
   if (!formOptionsReady.value) {
     message.error('创建配置尚未准备完成，请稍后重试');
     return;
@@ -325,7 +326,11 @@ async function submit() {
       voteStartsAt: form.votingEnabled && voteStartsAt.value ? new Date(voteStartsAt.value).toISOString() : null,
       voteEndsAt: form.votingEnabled && voteEndsAt.value ? new Date(voteEndsAt.value).toISOString() : null,
       voteGroupKeys: form.issueType === 'election' && form.electionScope === 'all' ? [] : form.voteGroupKeys,
-      electionCandidates: form.electionCandidates.map((candidate) => ({ nickname: candidate.nickname.trim(), remark: candidate.remark.trim() })),
+      electionCandidates: form.issueType === 'election'
+        ? form.electionCandidates
+            .map((candidate) => ({ nickname: candidate.nickname.trim(), remark: candidate.remark.trim() }))
+            .filter((candidate) => candidate.nickname || candidate.remark)
+        : [],
       aiReviewToken: aiReviewToken.value || undefined
     });
     message.success(manualReviewRequired.value ? '议题已提交，等待预审' : '议题已发布'); router.push(`/issues/${detail.issue.number}`);
@@ -373,6 +378,16 @@ function normalizeTitle() {
 
 function addCandidate() { form.electionCandidates.push({ nickname: '', remark: '' }); }
 function removeCandidate(index: number) { if (form.electionCandidates.length > 2) form.electionCandidates.splice(index, 1); }
+
+function validateElectionCandidates() {
+  const candidates = form.electionCandidates
+    .map((candidate) => ({ nickname: candidate.nickname.trim(), remark: candidate.remark.trim() }))
+    .filter((candidate) => candidate.nickname || candidate.remark);
+  if (candidates.length < 2) { message.error('请至少填写两名候选人的昵称和备注'); return false; }
+  if (candidates.some((candidate) => !candidate.nickname)) { message.error('请填写所有候选人的昵称'); return false; }
+  if (candidates.some((candidate) => !candidate.remark)) { message.error('请填写所有候选人的备注'); return false; }
+  return true;
+}
 
 function applyCommentPreset() {
   if (commentTimeMode.value === 'specific') return;

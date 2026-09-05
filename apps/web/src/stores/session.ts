@@ -8,6 +8,7 @@ export interface Viewer {
   email: string | null;
   status: string;
   groups: string[];
+  groupDetails?: Array<{ groupKey: string; name: string }>;
   boundProviders: string[];
 }
 

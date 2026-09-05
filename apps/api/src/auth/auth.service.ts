@@ -87,7 +87,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException('用户不存在');
 
     const groups = await this.db.rows(
-      `SELECT pg.group_key
+      `SELECT pg.group_key, pg.name
        FROM user_group_memberships ugm
        JOIN permission_groups pg ON pg.id = ugm.group_id
        WHERE ugm.user_id = :userId
@@ -106,6 +106,7 @@ export class AuthService {
       email: user.email,
       status: user.status,
       groups: groups.map((row) => row.group_key),
+      groupDetails: groups.map((row) => ({ groupKey: String(row.group_key), name: String(row.name) })),
       boundProviders: identities.map((row) => row.provider as Provider)
     };
   }

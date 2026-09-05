@@ -7,7 +7,7 @@
         <n-descriptions label-placement="top" :column="2" responsive="screen" bordered>
           <n-descriptions-item label="账号状态"><n-tag :type="session.viewer.status === 'active' ? 'success' : 'warning'">{{ session.viewer.status === 'active' ? '正常' : session.viewer.status }}</n-tag></n-descriptions-item>
           <n-descriptions-item label="登录身份"><n-space><n-tag v-for="provider in session.viewer.boundProviders" :key="provider" size="small">{{ displayProvider(provider) }}</n-tag></n-space></n-descriptions-item>
-          <n-descriptions-item label="权限组" :span="2"><n-space><n-tag v-for="group in session.viewer.groups" :key="group" type="info" size="small">{{ displayGroup(group) }}</n-tag></n-space></n-descriptions-item>
+          <n-descriptions-item label="权限组" :span="2"><n-space><n-tag v-for="group in viewerGroups" :key="group.groupKey" type="info" size="small">{{ group.name }}</n-tag></n-space></n-descriptions-item>
         </n-descriptions>
         <n-divider />
         <n-space v-if="session.viewer.boundProviders.includes('feishu')" align="center" justify="space-between" :wrap="true"><div><n-text strong>飞书部门权限</n-text><br /><n-text depth="3">同步后将按飞书通讯录更新所属部门权限组。</n-text></div><n-button secondary :loading="syncingFeishuDepartments" @click="syncFeishuDepartments"><template #icon><n-icon><RefreshOutline /></n-icon></template>同步飞书部门</n-button></n-space>
@@ -20,13 +20,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { LinkOutline, LogOutOutline, RefreshOutline } from '@vicons/ionicons5';
 import { NAvatar, NButton, NCard, NDescriptions, NDescriptionsItem, NDivider, NEmpty, NH2, NIcon, NSpace, NTag, NText, useMessage } from 'naive-ui';
 import { useSessionStore } from '../stores/session';
 import { displayGroup, displayProvider } from '../presentation';
 const session = useSessionStore();
 const message = useMessage();
+const viewerGroups = computed(() => {
+  if (session.viewer?.groupDetails?.length) return session.viewer.groupDetails;
+  return (session.viewer?.groups || []).map((groupKey) => ({ groupKey, name: displayGroup(groupKey) }));
+});
 const syncingFeishuDepartments = ref(false);
 async function syncFeishuDepartments() { syncingFeishuDepartments.value = true; try { await session.syncFeishuDepartments(); message.success('飞书部门权限组已同步'); } catch (error) { message.error(error instanceof Error ? error.message : '飞书部门同步失败'); } finally { syncingFeishuDepartments.value = false; } }
 </script>

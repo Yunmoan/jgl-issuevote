@@ -21,7 +21,15 @@ const issueInputSchema = z.object({
   electionQuorumCount: z.preprocess((value) => value === 0 ? null : value, z.number().int().min(1).max(100000).nullable().optional()),
   electionDurationPreset: z.enum(['instant', 'day']).nullable().optional(),
   electionStartMode: z.enum(['scheduled', 'manual']).nullable().optional(),
-  electionCandidates: z.array(z.object({ nickname: z.string().trim().min(1).max(80), remark: z.string().trim().min(1).max(300) })).max(100).default([]),
+  electionCandidates: z.preprocess(
+    (value) => Array.isArray(value)
+      ? value.filter((candidate) => candidate && typeof candidate === 'object' && (String(candidate.nickname ?? '').trim() || String(candidate.remark ?? '').trim()))
+      : value,
+    z.array(z.object({
+      nickname: z.string({ required_error: '请填写候选人昵称' }).trim().min(1, '请填写候选人昵称').max(80, '候选人昵称不能超过 80 个字符'),
+      remark: z.string({ required_error: '请填写候选人备注' }).trim().min(1, '请填写候选人备注').max(300, '候选人备注不能超过 300 个字符')
+    })).max(100).default([])
+  ),
   visibility: z.enum(['public', 'login', 'groups', 'admin_only']).default('login'),
   viewGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),
   voteGroupKeys: z.array(z.string().trim().min(1).max(80)).max(20).default([]).transform(uniqueValues),

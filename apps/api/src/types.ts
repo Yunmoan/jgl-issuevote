@@ -13,6 +13,7 @@ export interface Viewer {
   email: string | null;
   status: 'active' | 'disabled' | 'pending';
   groups: string[];
+  groupDetails?: Array<{ groupKey: string; name: string }>;
   boundProviders: Provider[];
 }
 
