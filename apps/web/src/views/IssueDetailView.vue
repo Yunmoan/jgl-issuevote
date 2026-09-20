@@ -75,7 +75,7 @@
                       </n-icon><span>弃权</span></n-space></n-radio-button>
                 </n-radio-group>
                 <n-space class="vote-submit" align="center" :size="12"><n-button type="primary" :disabled="detail.issue.issueType === 'election' ? !canSubmitElection : !canSubmitVote"
-                    @click="detail.issue.issueType === 'election' ? submitElectionVote() : submitVote">{{ detail.issue.issueType === 'election' && detail.myElectionVote?.length ? '重新投票' : '提交投票' }}</n-button><n-text v-if="detail.issue.issueType !== 'election' && voteHint"
+                    @click="submitVoteAction">{{ detail.issue.issueType === 'election' && detail.myElectionVote?.length ? '重新投票' : '提交投票' }}</n-button><n-text v-if="detail.issue.issueType !== 'election' && voteHint"
                     depth="3">{{ voteHint }}</n-text></n-space>
               </template>
                 </n-space>
@@ -334,6 +334,7 @@ async function load() {
 }
 async function submitVote() { if (!choice.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { choice: choice.value }); choice.value = null; message.success('投票已提交'); }
 async function submitElectionVote() { if (!canSubmitElection.value) return; detail.value = await apiPost(`/issues/${route.params.number}/vote`, { candidateIds: electionChoices.value }); electionChoices.value = [...(detail.value.myElectionVote || electionChoices.value)]; message.success('选举投票已提交'); }
+function submitVoteAction() { if (detail.value?.issue?.issueType === 'election') submitElectionVote(); else submitVote(); }
 async function submitComment() { await apiPost(`/issues/${route.params.number}/comments`, { bodyMd: commentBody.value }); commentBody.value = ''; comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已提交'); }
 function confirmDeleteComment(comment: any) { dialog.warning({ title: '删除意见', content: '确认删除这条意见吗？相关回复也将不再展示。', positiveText: '确认删除', negativeText: '取消', onPositiveClick: async () => { try { await apiDelete(`/issues/${route.params.number}/comments/${comment.id}`); comments.value = await apiGet(`/issues/${route.params.number}/comments`); message.success('意见已删除'); } catch (error) { message.error(error instanceof Error ? error.message : '删除意见失败'); return false; } } }); }
 async function toggleReaction(comment: any, reaction: 'like' | 'yes' | 'no') { if (!comment.viewerCanReact) return; const result = await apiPost<{ reactionCounts: Record<string, number>; myReactions: string[] }>(`/issues/${route.params.number}/comments/${comment.id}/reactions`, { reaction }); comment.reactionCounts = result.reactionCounts; comment.myReactions = result.myReactions; }
